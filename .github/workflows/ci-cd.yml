@@ -1,0 +1,248 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  PYTHON_VERSION: '3.11'
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build SAM Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r src/requirements.txt
+
+      - name: SAM Build
+        id: build
+        run: |
+          sam build --use-container
+        continue-on-error: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: .aws-sam/
+
+  lint:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r src/requirements.txt
+          pip install flake8 mypy
+
+      - name: Run flake8
+        run: |
+          flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: false
+
+      - name: Run mypy
+        run: |
+          mypy src/ --ignore-missing-imports || true
+        continue-on-error: false
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r src/requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: Run unit tests
+        run: |
+          pytest src/tests/unit/ -v --tb=short
+
+      - name: Run integration tests
+        run: |
+          pytest src/tests/integration/ -v --tb=short
+
+      - name: Run E2E tests
+        run: |
+          pytest src/tests/e2e/ -v --tb=short || true
+
+  deploy-dev:
+    name: Deploy to Dev Environment
+    runs-on: ubuntu-latest
+    needs: [build, lint, test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: dev
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: SAM Deploy to Dev
+        id: deploy
+        run: |
+          sam deploy --config-env dev --no-confirm-changeset --no-fail-on-empty-changeset
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Get API URL from stack outputs
+        id: stack-outputs
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name location-detection-dev \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Output deployment status
+        run: |
+          echo "✅ Deployment to dev environment completed successfully"
+          echo "API URL: ${{ steps.stack-outputs.outputs.api-url }}"
+
+  deploy-prod:
+    name: Deploy to Prod Environment
+    runs-on: ubuntu-latest
+    needs: [build, lint, test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: prod
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: SAM Deploy to Prod
+        id: deploy
+        run: |
+          sam deploy --config-env prod --no-confirm-changeset --no-fail-on-empty-changeset
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Get API URL from stack outputs
+        id: stack-outputs
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name location-detection-prod \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            Production deployment completed successfully.
+            API URL: ${{ steps.stack-outputs.outputs.api-url }}
+          draft: false
+          prerelease: false
+

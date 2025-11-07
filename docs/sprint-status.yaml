@@ -39,8 +39,8 @@ development_status:
   # Epic 1: Foundation & Infrastructure
   epic-1: contexted
   1-1-deploy-health-check-api-with-project-setup: done
-  1-2-deploy-complete-job-management-api-with-infrastructure: ready-for-dev
-  1-3-ci-cd-pipeline-setup: backlog
+  1-2-deploy-complete-job-management-api-with-infrastructure: done
+  1-3-ci-cd-pipeline-setup: done
   epic-1-retrospective: optional
 
   # Epic 2: API Gateway & Job Management

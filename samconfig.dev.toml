@@ -1,0 +1,32 @@
+version = 0.1
+
+[dev]
+[dev.global.parameters]
+stack_name = "location-detection-dev"
+region = "us-east-1"
+
+[dev.build.parameters]
+cached = true
+parallel = true
+
+[dev.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+region = "us-east-1"
+parameter_overrides = "Environment=\"dev\""
+s3_prefix = "location-detection-dev"
+image_repositories = []
+
+[dev.package.parameters]
+resolve_s3 = true
+
+[dev.sync.parameters]
+watch = true
+
+[dev.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[dev.local_start_lambda.parameters]
+warm_containers = "EAGER"
+
