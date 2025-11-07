@@ -1,0 +1,77 @@
+# generated: 2025-11-07T22:09:03Z
+# project: locatrix
+# project_key: locatrix
+# tracking_system: file-system
+# story_location: "{project-root}/docs/stories"
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic exists in epic file but not contexted
+#   - contexted: Epic tech context created (required before drafting stories)
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - drafted: Story file created in stories folder
+#   - ready-for-dev: Draft approved and story context created
+#   - in-progress: Developer actively working on implementation
+#   - review: Under SM review (via code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - completed: Retrospective has been done
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epics should be 'contexted' before stories can be 'drafted'
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically drafts next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', SM reviews, then Dev moves to 'done'
+
+generated: 2025-11-07T22:09:03Z
+project: locatrix
+project_key: locatrix
+tracking_system: file-system
+story_location: "{project-root}/docs/stories"
+
+development_status:
+  # Epic 1: Foundation & Infrastructure
+  epic-1: contexted
+  1-1-deploy-health-check-api-with-project-setup: done
+  1-2-deploy-complete-job-management-api-with-infrastructure: ready-for-dev
+  1-3-ci-cd-pipeline-setup: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: API Gateway & Job Management
+  epic-2: backlog
+  2-1-rest-api-enhancements-and-job-service-improvements: backlog
+  2-2-websocket-api-and-real-time-progress-updates: backlog
+  2-3-job-feedback-and-additional-features: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: AI Processing Pipeline
+  epic-3: backlog
+  3-1-textract-service-integration-with-preview-pipeline: backlog
+  3-2-sagemaker-integration-with-complete-processing-pipeline: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Caching & Performance
+  epic-4: backlog
+  4-1-caching-service-with-dynamodb-and-s3-integration: backlog
+  4-2-performance-optimization-and-monitoring: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Frontend Integration
+  epic-5: backlog
+  5-1-minimal-test-frontend-with-websocket-and-results-visualization: backlog
+  5-2-integration-with-existing-react-application: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Testing & Deployment
+  epic-6: backlog
+  6-1-comprehensive-testing-strategy: backlog
+  6-2-performance-testing-and-production-deployment: backlog
+  6-3-documentation-and-runbooks: backlog
+  epic-6-retrospective: optional
+

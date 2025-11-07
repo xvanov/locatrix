@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Location Detection AI - Health Check API
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: python3.11
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Environment name
+
+Resources:
+  # API Gateway v2 (HTTP API)
+  LocationDetectionApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Description: Location Detection AI REST API
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        MaxAge: 300
+
+  # Lambda Function for REST API
+  ApiRestHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-api-rest-handler'
+      CodeUri: src/
+      Handler: api.rest_api.handler
+      Events:
+        HealthCheck:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LocationDetectionApi
+            Path: /health
+            Method: GET
+      Policies:
+        - AWSLambdaBasicExecutionRole
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !GetAtt LocationDetectionApi.ApiEndpoint
+  
+  HealthEndpoint:
+    Description: Health check endpoint URL
+    Value: !Sub '${LocationDetectionApi.ApiEndpoint}/health'
+

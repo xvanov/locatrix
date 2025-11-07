@@ -1,0 +1,129 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>1.2</storyId>
+    <title>Deploy Complete Job Management API with Infrastructure</title>
+    <status>drafted</status>
+    <generatedAt>2025-01-15T00:00:00Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/1-2-deploy-complete-job-management-api-with-infrastructure.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer</asA>
+    <iWant>to deploy infrastructure resources, configuration management, logging, and a complete job management API</iWant>
+    <soThat>users can create, retrieve, and cancel jobs with a testable, end-to-end workflow</soThat>
+    <tasks>
+      <task id="1" ac="1,4">Configure DynamoDB tables in SAM template</task>
+      <task id="2" ac="1,3">Configure S3 buckets in SAM template</task>
+      <task id="3" ac="1,5">Implement configuration utility</task>
+      <task id="4" ac="1,6">Implement secrets utility</task>
+      <task id="5" ac="1,7">Implement logging utility</task>
+      <task id="6" ac="1,11">Implement error handling utility</task>
+      <task id="7" ac="1">Implement retry utility</task>
+      <task id="8" ac="1">Implement job data models</task>
+      <task id="9" ac="1,8,9,12">Implement job service</task>
+      <task id="10" ac="1,10,11">Implement REST API endpoints</task>
+      <task id="11" ac="1,11">Implement input validation</task>
+      <task id="12" ac="1,10">Update SAM template with API Gateway routes</task>
+      <task id="13" ac="1,2">Configure IAM roles and permissions</task>
+      <task id="14" ac="10,11,12">Deploy and verify end-to-end functionality</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <ac id="1">Given the health check API is deployed, when infrastructure resources, configuration, logging, and job management API are deployed, then DynamoDB tables, S3 buckets, IAM roles, utility modules, job service, models, and REST API endpoints are implemented</ac>
+    <ac id="2">All resources use environment variables for naming ({env} = dev/prod)</ac>
+    <ac id="3">S3 buckets have lifecycle policies configured</ac>
+    <ac id="4">DynamoDB tables have appropriate read/write capacity settings</ac>
+    <ac id="5">Configuration values can be retrieved at runtime</ac>
+    <ac id="6">Secrets are cached to reduce API calls</ac>
+    <ac id="7">Logs include request IDs, job IDs, and correlation IDs</ac>
+    <ac id="8">Jobs are stored in DynamoDB with unique job_id</ac>
+    <ac id="9">Blueprint files are uploaded to S3 with proper organization</ac>
+    <ac id="10">Job creation, retrieval, and cancellation can be tested end-to-end via API Gateway</ac>
+    <ac id="11">Invalid file formats and job IDs return appropriate error messages</ac>
+    <ac id="12">Cancelled jobs cannot be resumed</ac>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/stories/PRD.md" title="Product Requirements Document" section="FR-001, FR-005, FR-007, FR-008">
+        PRD defines functional requirements for accepting blueprint files, REST API endpoints, input validation, and job status tracking. Specifies file formats (PNG, JPG, PDF), 30-second processing time requirement, and job lifecycle management.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Data Architecture, APIs and Interfaces, Decision Summary">
+        Architecture defines DynamoDB schema for jobs and preview_cache tables, S3 bucket structure, API response formats, error handling patterns, and architectural decisions for Parameter Store, Secrets Manager, structured logging, and retry logic.
+      </doc>
+      <doc path="docs/tech-spec-epic-1.md" title="Epic 1 Technical Specification" section="Story 1.2, Data Models and Contracts, APIs and Interfaces">
+        Tech spec provides detailed acceptance criteria, job model schema, DynamoDB table definitions, REST API endpoint specifications, error codes, and workflow sequences for job creation, retrieval, and cancellation.
+      </doc>
+      <doc path="docs/epics.md" title="Epic Breakdown" section="Story 1.2: Deploy Complete Job Management API with Infrastructure">
+        Epic breakdown provides story acceptance criteria, technical notes, and prerequisites. Story covers FR-001, FR-005, FR-007, FR-008 as a vertical slice combining infrastructure with functional delivery.
+      </doc>
+    </docs>
+    <code>
+      <file path="template.yaml" kind="infrastructure" symbol="LocationDetectionApi, ApiRestHandlerFunction" lines="1-68" reason="Existing SAM template with API Gateway v2 and Lambda function. Story 1.2 needs to extend this with DynamoDB tables, S3 buckets, and additional API routes." />
+      <file path="src/api/rest_api.py" kind="handler" symbol="handler, handle_health_check, get_cors_headers" lines="1-91" reason="Existing REST API handler with health check endpoint and CORS headers. Story 1.2 needs to add job management endpoints (POST /api/v1/jobs, GET /api/v1/jobs/{job_id}, DELETE /api/v1/jobs/{job_id})." />
+    </code>
+    <dependencies>
+      <ecosystem name="python">
+        <package name="boto3" version=">=1.28.0,<2.0.0" />
+        <package name="botocore" version=">=1.31.0,<2.0.0" />
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>DynamoDB tables must use on-demand billing mode for MVP. Jobs table TTL: 7 days, preview_cache table TTL: 1 hour.</constraint>
+    <constraint>S3 buckets must use SSE-S3 encryption at rest and lifecycle policies to delete files after 30 days.</constraint>
+    <constraint>Job IDs must follow format: job_{timestamp}_{random} (e.g., job_20240115_abc123).</constraint>
+    <constraint>S3 object keys must follow format: blueprints/{job_id}/{filename} for uploaded files.</constraint>
+    <constraint>API responses must follow architecture.md format: {"status": "success|error", "data": {...}, "meta": {"request_id": "..."}}.</constraint>
+    <constraint>Error responses must include error codes: INVALID_FILE_FORMAT, FILE_TOO_LARGE, JOB_NOT_FOUND, JOB_ALREADY_COMPLETED, SERVICE_UNAVAILABLE.</constraint>
+    <constraint>Secrets Manager caching must use TTL of 5 minutes to reduce API calls.</constraint>
+    <constraint>Retry logic must use exponential backoff: 1s, 2s, 4s, 8s with max 3-5 retries.</constraint>
+    <constraint>Structured JSON logging must include request IDs, job IDs, and correlation IDs in all log entries.</constraint>
+    <constraint>File format validation must accept only PNG, JPG, PDF. File size limit: 50MB.</constraint>
+    <constraint>IAM roles must follow least privilege principle with minimal permissions for DynamoDB, S3, Parameter Store, and Secrets Manager.</constraint>
+    <constraint>Project structure must follow architecture.md: src/utils/, src/services/, src/models/, src/api/.</constraint>
+    <constraint>Python modules use snake_case, classes use PascalCase, functions use snake_case naming conventions.</constraint>
+    <constraint>All resources must use environment variables for naming: {project}-{environment}-{purpose} format.</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="POST /api/v1/jobs" kind="REST endpoint" signature="POST /api/v1/jobs - Create job with blueprint file upload" path="src/api/rest_api.py" />
+    <interface name="GET /api/v1/jobs/{job_id}" kind="REST endpoint" signature="GET /api/v1/jobs/{job_id} - Retrieve job status by job_id" path="src/api/rest_api.py" />
+    <interface name="DELETE /api/v1/jobs/{job_id}" kind="REST endpoint" signature="DELETE /api/v1/jobs/{job_id} - Cancel job by job_id" path="src/api/rest_api.py" />
+    <interface name="JobService.create_job()" kind="function" signature="create_job(blueprint_file, blueprint_format) -> Job" path="src/services/job_service.py" />
+    <interface name="JobService.get_job()" kind="function" signature="get_job(job_id: str) -> Job" path="src/services/job_service.py" />
+    <interface name="JobService.cancel_job()" kind="function" signature="cancel_job(job_id: str) -> Job" path="src/services/job_service.py" />
+    <interface name="DynamoDB Table: jobs" kind="database" signature="Partition Key: job_id (String), Attributes: status, created_at, updated_at, blueprint_s3_key, blueprint_format, blueprint_hash, result_s3_key, error, TTL: 7 days" path="template.yaml" />
+    <interface name="DynamoDB Table: preview_cache" kind="database" signature="Partition Key: blueprint_hash (String), Attributes: rooms, timestamp, model_version, expires_at, TTL: 1 hour" path="template.yaml" />
+    <interface name="S3 Bucket: location-detection-{env}-blueprints" kind="storage" signature="Purpose: Store uploaded blueprint files, Key Format: blueprints/{job_id}/{filename}, Lifecycle: Delete after 30 days" path="template.yaml" />
+    <interface name="S3 Bucket: location-detection-{env}-cache" kind="storage" signature="Purpose: Store processing results, Key Format: cache/{type}/{identifier}/{filename}, Lifecycle: Delete after 30 days" path="template.yaml" />
+  </interfaces>
+
+  <tests>
+    <standards>Use pytest for unit and integration tests. Mock AWS services using moto library. Target 80% coverage for core services. Follow AAA pattern (Arrange, Act, Assert). Test structure: src/tests/unit/ for unit tests, src/tests/integration/ for integration tests. Use structured JSON logging in tests. Test error handling, validation, and edge cases.</standards>
+    <locations>src/tests/unit/, src/tests/integration/</locations>
+    <ideas>
+      <test ac="1">Unit test DynamoDB table creation with correct schema and TTL configuration</test>
+      <test ac="1">Unit test S3 bucket creation with encryption and lifecycle policies</test>
+      <test ac="1,5">Unit test config.py Parameter Store integration with caching</test>
+      <test ac="1,6">Unit test secrets.py Secrets Manager integration with TTL caching</test>
+      <test ac="1,7">Unit test logging.py structured JSON logging with request/job IDs</test>
+      <test ac="1,11">Unit test errors.py custom exception classes and error formatting</test>
+      <test ac="1">Unit test retry.py exponential backoff retry logic</test>
+      <test ac="1">Unit test job.py job model creation and validation</test>
+      <test ac="1,8,9,12">Unit test job_service.py create_job(), get_job(), cancel_job() with mocked AWS services</test>
+      <test ac="1,10,11">Integration test POST /api/v1/jobs endpoint with file upload</test>
+      <test ac="1,10,11">Integration test GET /api/v1/jobs/{job_id} endpoint</test>
+      <test ac="1,10,11,12">Integration test DELETE /api/v1/jobs/{job_id} endpoint and cancellation logic</test>
+      <test ac="11">Unit test input validation for file formats (PNG, JPG, PDF) and file size (50MB limit)</test>
+      <test ac="11">Unit test error handling for invalid file formats and invalid job IDs</test>
+      <test ac="12">Unit test cancelled jobs cannot be resumed</test>
+      <test ac="10">End-to-end test complete job lifecycle: create → retrieve → cancel via API Gateway</test>
+    </ideas>
+  </tests>
+</story-context>
+
