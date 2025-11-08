@@ -1,0 +1,173 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>1</storyId>
+    <title>REST API Enhancements and Job Service Improvements</title>
+    <status>drafted</status>
+    <generatedAt>2025-01-15T00:00:00Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/2-1-rest-api-enhancements-and-job-service-improvements.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a developer</asA>
+    <iWant>I want to enhance the REST API handler and job service with additional features</iWant>
+    <soThat>So that the API can support more complex endpoints and the job management system is more robust</soThat>
+    <tasks>
+      <task id="1" ac="1,4">Enhance REST API handler with improved routing</task>
+      <task id="2" ac="1">Implement request ID generation and logging</task>
+      <task id="3" ac="1,2">Enhance error handling and response formatting</task>
+      <task id="4" ac="1">Implement API versioning support</task>
+      <task id="5" ac="1,7">Enhance job service with additional logic</task>
+      <task id="6" ac="1,5">Enhance job data models</task>
+      <task id="7" ac="1,6">Improve input validation</task>
+      <task id="8" ac="1,6">Enhance error handling for edge cases</task>
+      <task id="9" ac="3">Configure CORS headers</task>
+      <task id="10" ac="1-7">Update tests for enhanced functionality</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">Given The job management API is deployed (from Story 1.2), When I enhance the REST API handler and job service, Then The following are implemented: Enhanced src/api/rest_api.py with improved routing, Request ID generation and logging for all endpoints, Enhanced error handling and response formatting, Support for multiple API versions, Enhanced src/services/job_service.py with additional job management logic, Enhanced src/models/job.py with additional job data models, Improved input validation for file formats and sizes, Enhanced error handling for edge cases</criterion>
+    <criterion id="2">And API responses follow the format from architecture.md</criterion>
+    <criterion id="3">And CORS headers are configured for frontend integration</criterion>
+    <criterion id="4">And Request routing supports multiple endpoints</criterion>
+    <criterion id="5">And Job responses include all required fields from architecture.md</criterion>
+    <criterion id="6">And Enhanced validation catches more error scenarios</criterion>
+    <criterion id="7">And Job service handles concurrent requests properly</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/stories/PRD.md" title="Product Requirements Document" section="Core Functional Requirements">
+        Defines FR-001 (Accept blueprint files), FR-005 (REST API endpoint), FR-007 (Input validation), FR-008 (Job status tracking), and NFR-004 (50MB file size limit). Establishes the foundation for API endpoint requirements and validation rules.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="API Contracts">
+        Defines standardized API response format with status, data, and meta fields. Specifies error response format with error codes, messages, and details. Documents request ID generation format (req_{timestamp}_{random}) and API versioning strategy (path-based: /api/v1/...).
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Error Handling">
+        Specifies error handling patterns with error codes (INVALID_FILE_FORMAT, FILE_TOO_LARGE, JOB_NOT_FOUND, etc.), HTTP status code mapping (400, 404, 500, 503), and standardized error response structure. Documents retry logic with exponential backoff.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Logging Strategy">
+        Defines structured JSON logging requirements with request IDs, job IDs, and correlation IDs. Specifies CloudWatch integration patterns and log format standards.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Naming Patterns">
+        Documents naming conventions: Request ID format (req_{timestamp}_{random}), API version format (v1, v2, etc.), Error codes (INVALID_FILE_FORMAT, FILE_TOO_LARGE, etc.), and job ID format (job_{timestamp}_{random}).
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Project Structure">
+        Defines project structure with src/api/rest_api.py, src/services/job_service.py, src/models/job.py, and src/utils/ modules. Documents module organization and import patterns.
+      </doc>
+      <doc path="docs/tech-spec-epic-2.md" title="Epic 2 Technical Specification" section="Detailed Design">
+        Provides detailed design for REST API enhancements including routing improvements, request ID generation, error handling, API versioning, and job service enhancements. Documents data models, API contracts, and implementation patterns.
+      </doc>
+      <doc path="docs/tech-spec-epic-2.md" title="Epic 2 Technical Specification" section="Data Models and Contracts">
+        Defines enhanced job model with additional fields: request_id, correlation_id, api_version, blueprint_format, blueprint_hash. Documents WebSocket connection model and feedback model structures.
+      </doc>
+      <doc path="docs/epics.md" title="Epic Breakdown" section="Epic 2: API Gateway &amp; Job Management">
+        Defines Story 2.1 acceptance criteria and technical notes. Documents prerequisites (Story 1.2), API Gateway v2 usage, REST API naming conventions, and job ID generation patterns.
+      </doc>
+      <doc path="docs/stories/2-1-rest-api-enhancements-and-job-service-improvements.md" title="Story 2.1" section="Dev Notes">
+        Provides architecture patterns, constraints, project structure notes, learnings from previous stories, and testing standards. Documents key files to reuse and implementation guidance.
+      </doc>
+    </docs>
+    <code>
+      <artifact path="src/api/rest_api.py" kind="controller" symbol="handler" lines="37-113" reason="Main REST API handler that routes requests. Needs enhancement for improved routing, request ID generation, error handling, and API versioning support."/>
+      <artifact path="src/api/rest_api.py" kind="controller" symbol="handle_create_job" lines="147-237" reason="Job creation endpoint handler. Needs enhancement for request ID generation, improved error handling, and API version extraction."/>
+      <artifact path="src/api/rest_api.py" kind="controller" symbol="handle_get_job" lines="240-300" reason="Job retrieval endpoint handler. Needs enhancement for request ID generation and improved error handling."/>
+      <artifact path="src/api/rest_api.py" kind="controller" symbol="handle_cancel_job" lines="303-363" reason="Job cancellation endpoint handler. Needs enhancement for request ID generation and improved error handling."/>
+      <artifact path="src/api/rest_api.py" kind="controller" symbol="get_cors_headers" lines="366-379" reason="CORS headers utility. Already configured but may need enhancement for additional headers or origin restrictions."/>
+      <artifact path="src/services/job_service.py" kind="service" symbol="JobService" lines="30-287" reason="Job management service. Needs enhancement for concurrent request handling, blueprint hash calculation (currently MD5, may need SHA256), request_id and correlation_id tracking, and API version storage."/>
+      <artifact path="src/services/job_service.py" kind="service" symbol="create_job" lines="62-174" reason="Job creation method. Needs enhancement to add request_id, correlation_id, api_version, and blueprint_hash (currently MD5) fields."/>
+      <artifact path="src/services/job_service.py" kind="service" symbol="get_job" lines="176-210" reason="Job retrieval method. Needs enhancement to handle concurrent requests properly with thread-safe operations."/>
+      <artifact path="src/services/job_service.py" kind="service" symbol="cancel_job" lines="212-267" reason="Job cancellation method. Needs enhancement for concurrent request handling and optimistic locking."/>
+      <artifact path="src/models/job.py" kind="model" symbol="Job" lines="24-218" reason="Job data model. Needs enhancement to add fields: request_id, correlation_id, api_version, blueprint_format (already exists), blueprint_hash (already exists but may need SHA256)."/>
+      <artifact path="src/models/job.py" kind="model" symbol="JobStatus" lines="15-21" reason="Job status enumeration. May need additional statuses for multi-stage processing (stage_1_complete, stage_2_complete)."/>
+      <artifact path="src/models/job.py" kind="model" symbol="to_dict" lines="94-111" reason="Job serialization method. Needs update to include new fields (request_id, correlation_id, api_version) in response."/>
+      <artifact path="src/utils/errors.py" kind="utility" symbol="format_error_response" lines="225-253" reason="Error response formatter. Already follows architecture format but may need enhancement for request ID inclusion in meta field."/>
+      <artifact path="src/utils/errors.py" kind="utility" symbol="InvalidFileFormatError" lines="73-98" reason="File format validation error. Already implemented but may need enhancement for MIME type checking."/>
+      <artifact path="src/utils/errors.py" kind="utility" symbol="FileTooLargeError" lines="101-123" reason="File size validation error. Already implemented with 50MB limit per NFR-004."/>
+      <artifact path="src/utils/logging.py" kind="utility" symbol="StructuredLogger" lines="66-170" reason="Structured logging utility. Already supports request_id, job_id, and correlation_id. Needs verification that request ID generation format matches architecture (req_{timestamp}_{random})."/>
+      <artifact path="src/utils/logging.py" kind="utility" symbol="get_logger" lines="173-194" reason="Logger factory function. Already implemented and supports context tracking."/>
+      <artifact path="src/utils/retry.py" kind="utility" symbol="retry_aws_call" lines="171-232" reason="AWS service retry utility with exponential backoff. Already implemented and should be used for DynamoDB and S3 operations to handle throttling and transient failures."/>
+      <artifact path="src/utils/retry.py" kind="utility" symbol="is_retryable_error" lines="39-62" reason="Error classification utility. Identifies retryable AWS errors including throttling, service unavailable, and timeout errors."/>
+    </code>
+    <dependencies>
+      <ecosystem name="python">
+        <package name="boto3" version=">=1.28.0,<2.0.0"/>
+        <package name="botocore" version=">=1.31.0,<2.0.0"/>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>API Gateway v2 (HTTP API) must be used for REST endpoints per architecture decision</constraint>
+    <constraint>Request ID format must be req_{timestamp}_{random} per architecture naming patterns</constraint>
+    <constraint>API versioning must use path-based approach (/api/v1/...) per architecture API contracts</constraint>
+    <constraint>All API responses must follow standardized format: {status, data, meta} per architecture API contracts</constraint>
+    <constraint>Error responses must include error code, message, details, and request_id in meta per architecture error handling</constraint>
+    <constraint>Job ID format must be job_{timestamp}_{random} per architecture naming patterns</constraint>
+    <constraint>File size limit is 50MB per NFR-004 (already enforced in existing code)</constraint>
+    <constraint>Supported file formats: PNG, JPG, PDF per FR-001 (already validated in existing code)</constraint>
+    <constraint>Structured JSON logging must be used with request_id, job_id, correlation_id per architecture logging strategy</constraint>
+    <constraint>Retry logic with exponential backoff (1s, 2s, 4s, 8s) must be used for AWS service calls per architecture error handling</constraint>
+    <constraint>Thread-safe operations required for concurrent request handling per story acceptance criteria</constraint>
+    <constraint>Optimistic locking required for concurrent job updates per story dev notes</constraint>
+    <constraint>CORS headers must be configured for frontend integration per acceptance criteria</constraint>
+    <constraint>Existing project structure must be preserved - enhance existing files, don't restructure per story dev notes</constraint>
+    <constraint>Existing utilities (logging.py, errors.py, retry.py) must be reused and extended per story dev notes</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="REST API Handler" kind="REST endpoint" signature="handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]" path="src/api/rest_api.py">
+      Main Lambda handler for REST API endpoints. Routes requests to appropriate handlers based on HTTP method and path. Currently handles: GET /health, POST /api/v1/jobs, GET /api/v1/jobs/{job_id}, DELETE /api/v1/jobs/{job_id}. Needs enhancement for improved routing, request ID generation, and API version extraction.
+    </interface>
+    <interface name="Create Job Endpoint" kind="REST endpoint" signature="POST /api/v1/jobs" path="src/api/rest_api.py">
+      Creates a new job with blueprint file upload. Accepts JSON body with blueprint.file (base64), blueprint.format, and blueprint.filename. Returns job data with status 201. Needs enhancement for request ID generation, API version extraction, and improved error handling.
+    </interface>
+    <interface name="Get Job Endpoint" kind="REST endpoint" signature="GET /api/v1/jobs/{job_id}" path="src/api/rest_api.py">
+      Retrieves job status by job_id. Returns job data with status 200. Raises JobNotFoundError (404) if job not found. Needs enhancement for request ID generation and improved error handling.
+    </interface>
+    <interface name="Cancel Job Endpoint" kind="REST endpoint" signature="DELETE /api/v1/jobs/{job_id}" path="src/api/rest_api.py">
+      Cancels a job by job_id. Returns updated job data with status 200. Raises JobAlreadyCompletedError (400) if job cannot be cancelled. Needs enhancement for request ID generation and concurrent request handling.
+    </interface>
+    <interface name="JobService.create_job" kind="function signature" signature="create_job(blueprint_file: BinaryIO, blueprint_format: str, filename: Optional[str] = None) -> Job" path="src/services/job_service.py">
+      Creates a new job with blueprint file upload. Uploads file to S3, creates DynamoDB record. Returns Job instance. Needs enhancement to accept and store request_id, correlation_id, api_version, and calculate blueprint_hash (currently MD5, may need SHA256).
+    </interface>
+    <interface name="JobService.get_job" kind="function signature" signature="get_job(job_id: str) -> Job" path="src/services/job_service.py">
+      Retrieves a job by job_id. Returns Job instance. Raises JobNotFoundError if not found. Needs enhancement for thread-safe concurrent access.
+    </interface>
+    <interface name="JobService.cancel_job" kind="function signature" signature="cancel_job(job_id: str) -> Job" path="src/services/job_service.py">
+      Cancels a job by job_id. Returns updated Job instance. Raises JobAlreadyCompletedError if cannot be cancelled. Needs enhancement for optimistic locking and concurrent request handling.
+    </interface>
+    <interface name="Job.to_dict" kind="method signature" signature="to_dict() -> Dict[str, Any]" path="src/models/job.py">
+      Converts Job to dictionary format for API responses. Returns dictionary with job fields. Needs update to include new fields: request_id, correlation_id, api_version.
+    </interface>
+    <interface name="format_error_response" kind="function signature" signature="format_error_response(error: Exception, request_id: Optional[str] = None) -> Dict[str, Any]" path="src/utils/errors.py">
+      Formats exception as API error response. Returns dictionary with status='error', error={code, message, details}, meta={request_id}. Already follows architecture format but needs verification for request_id inclusion.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing framework: pytest with unit, integration, and E2E tests. Test coverage target: 80% for enhanced components. All acceptance criteria must have corresponding tests. Edge cases must be tested: invalid inputs, concurrent requests, service failures. Tests must verify request ID generation, API routing, error handling, API versioning, concurrent request handling, validation, and CORS headers.
+    </standards>
+    <locations>
+      <location>src/tests/unit/</location>
+      <location>src/tests/integration/</location>
+      <location>src/tests/e2e/</location>
+    </locations>
+    <ideas>
+      <test ac="1">Test request ID generation format (req_{timestamp}_{random}) and inclusion in all log entries and API responses</test>
+      <test ac="1,4">Test API routing for all endpoints: POST /api/v1/jobs, GET /api/v1/jobs/{job_id}, DELETE /api/v1/jobs/{job_id}, GET /health</test>
+      <test ac="1,2">Test error handling and response formatting matches architecture format with error codes, messages, details, and request_id in meta</test>
+      <test ac="1">Test API version extraction from path (/api/v1/... → v1) and inclusion in response metadata</test>
+      <test ac="1,7">Test concurrent request handling with multiple simultaneous requests to same job (thread-safe operations)</test>
+      <test ac="1,5">Test job model validation and serialization includes all required fields: request_id, correlation_id, api_version, blueprint_format, blueprint_hash</test>
+      <test ac="1,6">Test input validation: file format (PNG, JPG, PDF) with MIME type checking, file size (max 50MB), job_id format in path parameters, request body validation</test>
+      <test ac="1,6">Test edge case error handling: DynamoDB throttling errors, S3 upload failures with retry logic, invalid job_id in path parameters, concurrent job updates (optimistic locking), service unavailability (DynamoDB, S3)</test>
+      <test ac="3">Test CORS headers are present in all API responses: Access-Control-Allow-Origin, Access-Control-Allow-Methods, Access-Control-Allow-Headers</test>
+      <test ac="1-7">Test integration: REST API endpoints with mocked AWS services, request ID propagation through service calls, concurrent request handling, error responses match architecture format</test>
+    </ideas>
+  </tests>
+</story-context>
+

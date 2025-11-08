@@ -47,7 +47,10 @@ class Job:
         blueprint_format: Optional[str] = None,
         blueprint_hash: Optional[str] = None,
         result_s3_key: Optional[str] = None,
-        error: Optional[Dict[str, Any]] = None
+        error: Optional[Dict[str, Any]] = None,
+        request_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        api_version: Optional[str] = None
     ):
         """
         Initialize Job instance.
@@ -62,6 +65,9 @@ class Job:
             blueprint_hash: Hash of blueprint file
             result_s3_key: S3 key for results
             error: Error details if failed
+            request_id: Request ID for correlation
+            correlation_id: Correlation ID for distributed tracing
+            api_version: API version used to create the job
         """
         if job_id is None:
             job_id = self._generate_job_id()
@@ -78,6 +84,9 @@ class Job:
         self.blueprint_hash = blueprint_hash
         self.result_s3_key = result_s3_key
         self.error = error
+        self.request_id = request_id
+        self.correlation_id = correlation_id
+        self.api_version = api_version
     
     @staticmethod
     def _generate_job_id() -> str:
@@ -98,7 +107,7 @@ class Job:
         Returns:
             Dictionary representation of Job
         """
-        return {
+        result = {
             'job_id': self.job_id,
             'status': self.status.value,
             'created_at': self.created_at,
@@ -109,6 +118,16 @@ class Job:
             'result_s3_key': self.result_s3_key,
             'error': self.error
         }
+        
+        # Add optional fields if present
+        if self.request_id:
+            result['request_id'] = self.request_id
+        if self.correlation_id:
+            result['correlation_id'] = self.correlation_id
+        if self.api_version:
+            result['api_version'] = self.api_version
+        
+        return result
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Job':
@@ -130,7 +149,10 @@ class Job:
             blueprint_format=data.get('blueprint_format'),
             blueprint_hash=data.get('blueprint_hash'),
             result_s3_key=data.get('result_s3_key'),
-            error=data.get('error')
+            error=data.get('error'),
+            request_id=data.get('request_id'),
+            correlation_id=data.get('correlation_id'),
+            api_version=data.get('api_version')
         )
     
     def to_dynamodb_item(self) -> Dict[str, Any]:

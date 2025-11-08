@@ -2,7 +2,7 @@
 Job service for managing location detection jobs.
 
 This module provides business logic for job creation, retrieval, and cancellation
-with DynamoDB and S3 integration.
+with DynamoDB and S3 integration, including thread-safe operations and enhanced error handling.
 """
 import os
 import hashlib
@@ -13,14 +13,14 @@ from botocore.exceptions import ClientError
 # Handle imports for both Lambda (src/ directory) and local testing (project root)
 try:
     from models.job import Job, JobStatus
-    from utils.errors import JobNotFoundError, JobAlreadyCompletedError
-    from utils.retry import retry_aws_call
+    from utils.errors import JobNotFoundError, JobAlreadyCompletedError, ServiceUnavailableError
+    from utils.retry import retry_aws_call, is_retryable_error
     from utils.logging import get_logger
 except ImportError:
     # Fallback for local testing from project root
     from src.models.job import Job, JobStatus
-    from src.utils.errors import JobNotFoundError, JobAlreadyCompletedError
-    from src.utils.retry import retry_aws_call
+    from src.utils.errors import JobNotFoundError, JobAlreadyCompletedError, ServiceUnavailableError
+    from src.utils.retry import retry_aws_call, is_retryable_error
     from src.utils.logging import get_logger
 
 
@@ -63,7 +63,10 @@ class JobService:
         self,
         blueprint_file: BinaryIO,
         blueprint_format: str,
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
+        request_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        api_version: Optional[str] = None
     ) -> Job:
         """
         Create a new job with blueprint file upload.
@@ -72,6 +75,9 @@ class JobService:
             blueprint_file: File-like object containing blueprint data
             blueprint_format: Format of blueprint file (png, jpg, pdf)
             filename: Original filename (default: None)
+            request_id: Request ID for correlation (default: None)
+            correlation_id: Correlation ID for distributed tracing (default: None)
+            api_version: API version used to create the job (default: None)
             
         Returns:
             Created Job instance
@@ -93,11 +99,14 @@ class JobService:
         # Calculate blueprint hash (MD5)
         blueprint_hash = hashlib.md5(file_content).hexdigest()
         
-        # Create job
+        # Create job with new fields
         job = Job(
             status=JobStatus.PENDING,
             blueprint_format=blueprint_format,
-            blueprint_hash=blueprint_hash
+            blueprint_hash=blueprint_hash,
+            request_id=request_id,
+            correlation_id=correlation_id,
+            api_version=api_version
         )
         
         # Generate S3 key: blueprints/{job_id}/{filename}
@@ -114,15 +123,31 @@ class JobService:
         )
         
         def upload_file():
-            self.s3.put_object(
-                Bucket=self.blueprints_bucket_name,
-                Key=s3_key,
-                Body=file_content,
-                ContentType=self._get_content_type(blueprint_format)
-            )
+            try:
+                self.s3.put_object(
+                    Bucket=self.blueprints_bucket_name,
+                    Key=s3_key,
+                    Body=file_content,
+                    ContentType=self._get_content_type(blueprint_format)
+                )
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', '')
+                # Handle service unavailability
+                if error_code in ['ServiceUnavailable', 'SlowDown']:
+                    raise ServiceUnavailableError('S3', retry_after=5)
+                # Re-raise other errors
+                raise
         
         try:
             retry_aws_call(upload_file)
+        except ServiceUnavailableError as e:
+            # S3 service unavailable - don't create DynamoDB record
+            logger.error(
+                f"S3 service unavailable for job {job.job_id}, aborting job creation",
+                exc_info=True,
+                context={'job_id': job.job_id, 's3_key': s3_key, 'service': 'S3'}
+            )
+            raise
         except Exception as e:
             # S3 upload failed - don't create DynamoDB record
             logger.error(
@@ -139,10 +164,43 @@ class JobService:
         )
         
         def put_job():
-            self.jobs_table.put_item(Item=job.to_dynamodb_item())
+            try:
+                self.jobs_table.put_item(Item=job.to_dynamodb_item())
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', '')
+                # Handle throttling and service unavailability
+                if error_code in ['ProvisionedThroughputExceededException', 'ThrottlingException']:
+                    # Retry logic will handle this, but we can add specific handling if needed
+                    raise
+                elif error_code in ['ServiceUnavailable', 'ResourceNotFoundException']:
+                    raise ServiceUnavailableError('DynamoDB', retry_after=5)
+                # Re-raise other errors
+                raise
         
         try:
             retry_aws_call(put_job)
+        except ServiceUnavailableError as e:
+            # DynamoDB service unavailable after S3 upload succeeded
+            # Clean up S3 object to prevent orphaned files
+            logger.error(
+                f"DynamoDB service unavailable for job {job.job_id}, cleaning up S3 object",
+                exc_info=True,
+                context={'job_id': job.job_id, 's3_key': s3_key, 'service': 'DynamoDB'}
+            )
+            try:
+                self.s3.delete_object(Bucket=self.blueprints_bucket_name, Key=s3_key)
+                logger.info(
+                    f"Cleaned up S3 object after DynamoDB failure: {s3_key}",
+                    context={'job_id': job.job_id, 's3_key': s3_key}
+                )
+            except Exception as cleanup_error:
+                # Log cleanup failure but don't mask original error
+                logger.error(
+                    f"Failed to clean up S3 object after DynamoDB failure: {s3_key}",
+                    exc_info=True,
+                    context={'job_id': job.job_id, 's3_key': s3_key, 'cleanup_error': str(cleanup_error)}
+                )
+            raise
         except Exception as e:
             # DynamoDB creation failed after S3 upload succeeded
             # Clean up S3 object to prevent orphaned files
@@ -211,7 +269,7 @@ class JobService:
     
     def cancel_job(self, job_id: str) -> Job:
         """
-        Cancel a job by job_id.
+        Cancel a job by job_id with optimistic locking for concurrent requests.
         
         Args:
             job_id: Job identifier
@@ -235,6 +293,10 @@ class JobService:
         if not job.can_be_cancelled():
             raise JobAlreadyCompletedError(job_id, job.status.value)
         
+        # Store original status and updated_at for optimistic locking
+        original_status = job.status.value
+        original_updated_at = job.updated_at
+        
         # Update status to cancelled
         job.update_status(JobStatus.CANCELLED)
         
@@ -243,21 +305,50 @@ class JobService:
             context={'job_id': job_id}
         )
         
-        # Update DynamoDB
+        # Update DynamoDB with optimistic locking (conditional update)
+        # This prevents concurrent updates from overwriting each other
         def update_item():
-            self.jobs_table.update_item(
-                Key={'job_id': job_id},
-                UpdateExpression='SET #status = :status, updated_at = :updated_at',
-                ExpressionAttributeNames={
-                    '#status': 'status'
-                },
-                ExpressionAttributeValues={
-                    ':status': JobStatus.CANCELLED.value,
-                    ':updated_at': job.updated_at
-                }
-            )
+            try:
+                self.jobs_table.update_item(
+                    Key={'job_id': job_id},
+                    UpdateExpression='SET #status = :status, updated_at = :updated_at',
+                    ConditionExpression='#status = :original_status AND updated_at = :original_updated_at',
+                    ExpressionAttributeNames={
+                        '#status': 'status'
+                    },
+                    ExpressionAttributeValues={
+                        ':status': JobStatus.CANCELLED.value,
+                        ':updated_at': job.updated_at,
+                        ':original_status': original_status,
+                        ':original_updated_at': original_updated_at
+                    }
+                )
+            except ClientError as e:
+                # Check if it's a conditional check failure (concurrent update)
+                if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+                    # Re-fetch the job to get current state
+                    updated_job = self.get_job(job_id)
+                    # Check if it was already cancelled by another request
+                    if updated_job.status == JobStatus.CANCELLED:
+                        logger.info(
+                            f"Job {job_id} was already cancelled by another request",
+                            context={'job_id': job_id}
+                        )
+                        return updated_job
+                    # Otherwise, status changed - raise error
+                    raise JobAlreadyCompletedError(job_id, updated_job.status.value)
+                # Re-raise other errors
+                raise
         
-        retry_aws_call(update_item)
+        try:
+            result = retry_aws_call(update_item)
+            # If result is a Job instance (from concurrent cancellation), return it
+            if isinstance(result, Job):
+                return result
+        except JobAlreadyCompletedError:
+            # Re-fetch to get current state
+            updated_job = self.get_job(job_id)
+            raise JobAlreadyCompletedError(job_id, updated_job.status.value)
         
         logger.info(
             f"Job cancelled: {job_id}",

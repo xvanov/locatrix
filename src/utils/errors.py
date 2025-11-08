@@ -222,13 +222,14 @@ class RateLimitExceededError(LocationDetectionError):
         )
 
 
-def format_error_response(error: Exception, request_id: Optional[str] = None) -> Dict[str, Any]:
+def format_error_response(error: Exception, request_id: Optional[str] = None, api_version: Optional[str] = None) -> Dict[str, Any]:
     """
     Format an exception as an API error response.
     
     Args:
         error: Exception to format
         request_id: Request ID for correlation (default: None)
+        api_version: API version string (default: None)
         
     Returns:
         API response dictionary with error format
@@ -237,10 +238,16 @@ def format_error_response(error: Exception, request_id: Optional[str] = None) ->
         >>> try:
         >>>     # Some operation
         >>> except JobNotFoundError as e:
-        >>>     return format_error_response(e, request_id='req_123')
+        >>>     return format_error_response(e, request_id='req_123', api_version='v1')
     """
     if isinstance(error, LocationDetectionError):
-        return error.to_api_response(request_id=request_id)
+        response = error.to_api_response(request_id=request_id)
+        # Add API version to meta if provided
+        if api_version and 'meta' in response:
+            response['meta']['api_version'] = api_version
+        elif api_version:
+            response['meta'] = {'request_id': request_id, 'api_version': api_version}
+        return response
     
     # Generic error for unexpected exceptions
     generic_error = LocationDetectionError(
@@ -250,5 +257,12 @@ def format_error_response(error: Exception, request_id: Optional[str] = None) ->
         status_code=500
     )
     
-    return generic_error.to_api_response(request_id=request_id)
+    response = generic_error.to_api_response(request_id=request_id)
+    # Add API version to meta if provided
+    if api_version and 'meta' in response:
+        response['meta']['api_version'] = api_version
+    elif api_version:
+        response['meta'] = {'request_id': request_id, 'api_version': api_version}
+    
+    return response
 

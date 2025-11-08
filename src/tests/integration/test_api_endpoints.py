@@ -44,6 +44,11 @@ class TestHealthCheck:
         assert response['statusCode'] == 200
         body = json.loads(response['body'])
         assert body['status'] == 'healthy'
+        assert 'data' in body
+        assert 'services' in body['data']
+        assert 'meta' in body
+        assert 'request_id' in body['meta']
+        assert 'api_version' in body['meta']
 
 
 class TestCreateJob:
@@ -60,9 +65,10 @@ class TestCreateJob:
         )
         mock_job_service.create_job.return_value = mock_job
         
-        # Setup event
-        file_content = b'test file content'
-        encoded_file = base64.b64encode(file_content).decode('utf-8')
+        # Setup event with valid PDF file content (PDF signature: %PDF)
+        # Create minimal valid PDF content
+        pdf_content = b'%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\nxref\n0 1\ntrailer\n<<\n/Root 1 0 R\n>>\n%%EOF'
+        encoded_file = base64.b64encode(pdf_content).decode('utf-8')
         
         api_event_base['requestContext']['http']['method'] = 'POST'
         api_event_base['requestContext']['http']['path'] = '/api/v1/jobs'
@@ -80,10 +86,20 @@ class TestCreateJob:
         body = json.loads(response['body'])
         assert body['status'] == 'success'
         assert body['data']['job_id'] == 'job_123'
+        # Verify meta fields
+        assert 'meta' in body
+        assert 'request_id' in body['meta']
+        assert 'api_version' in body['meta']
+        # Verify create_job was called with new parameters
+        call_args = mock_job_service.create_job.call_args
+        assert call_args is not None
+        # Check that request_id, correlation_id, and api_version are passed
+        assert 'request_id' in call_args.kwargs or len(call_args.args) >= 4
         mock_job_service.create_job.assert_called_once()
     
     def test_create_job_invalid_format(self, api_event_base):
         """Test job creation with invalid format."""
+        # Use invalid format (gif) - will fail format validation before MIME check
         file_content = b'test file content'
         encoded_file = base64.b64encode(file_content).decode('utf-8')
         
@@ -102,11 +118,14 @@ class TestCreateJob:
         body = json.loads(response['body'])
         assert body['status'] == 'error'
         assert body['error']['code'] == 'INVALID_FILE_FORMAT'
+        # Verify meta fields
+        assert 'meta' in body
+        assert 'request_id' in body['meta']
     
     def test_create_job_file_too_large(self, api_event_base):
         """Test job creation with file too large."""
-        # Create a file larger than 50MB
-        large_file = b'x' * (51 * 1024 * 1024)
+        # Create a file larger than 50MB with valid PDF signature
+        large_file = b'%PDF-1.4\n' + (b'x' * (51 * 1024 * 1024))
         encoded_file = base64.b64encode(large_file).decode('utf-8')
         
         api_event_base['requestContext']['http']['method'] = 'POST'
@@ -124,6 +143,9 @@ class TestCreateJob:
         body = json.loads(response['body'])
         assert body['status'] == 'error'
         assert body['error']['code'] == 'FILE_TOO_LARGE'
+        # Verify meta fields
+        assert 'meta' in body
+        assert 'request_id' in body['meta']
 
 
 class TestGetJob:
@@ -147,6 +169,11 @@ class TestGetJob:
         body = json.loads(response['body'])
         assert body['status'] == 'success'
         assert body['data']['job_id'] == 'job_123'
+        # Verify meta fields
+        assert 'meta' in body
+        assert 'request_id' in body['meta']
+        assert 'api_version' in body['meta']
+        assert 'X-Request-ID' in response['headers']
         mock_job_service.get_job.assert_called_once_with('job_123')
     
     def test_get_job_not_found(self, api_event_base, mock_job_service):
@@ -186,6 +213,11 @@ class TestCancelJob:
         body = json.loads(response['body'])
         assert body['status'] == 'success'
         assert body['data']['status'] == 'cancelled'
+        # Verify meta fields
+        assert 'meta' in body
+        assert 'request_id' in body['meta']
+        assert 'api_version' in body['meta']
+        assert 'X-Request-ID' in response['headers']
         mock_job_service.cancel_job.assert_called_once_with('job_123')
     
     def test_cancel_job_already_completed(self, api_event_base, mock_job_service):

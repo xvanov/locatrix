@@ -41,12 +41,12 @@ development_status:
   1-1-deploy-health-check-api-with-project-setup: done
   1-2-deploy-complete-job-management-api-with-infrastructure: done
   1-3-ci-cd-pipeline-setup: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: completed
 
   # Epic 2: API Gateway & Job Management
-  epic-2: backlog
-  2-1-rest-api-enhancements-and-job-service-improvements: backlog
-  2-2-websocket-api-and-real-time-progress-updates: backlog
+  epic-2: contexted
+  2-1-rest-api-enhancements-and-job-service-improvements: done
+  2-2-websocket-api-and-real-time-progress-updates: drafted
   2-3-job-feedback-and-additional-features: backlog
   epic-2-retrospective: optional
 

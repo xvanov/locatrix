@@ -46,10 +46,16 @@ def test_health_check_handler():
     # Verify response body format
     body = json.loads(response['body'])
     assert body['status'] == 'healthy'
-    assert 'services' in body
-    assert body['services']['dynamodb'] == 'healthy'
-    assert body['services']['s3'] == 'healthy'
-    assert body['services']['sagemaker'] == 'healthy'
+    assert 'data' in body
+    assert 'services' in body['data']
+    assert body['data']['services']['dynamodb'] == 'healthy'
+    assert body['data']['services']['s3'] == 'healthy'
+    assert body['data']['services']['sagemaker'] == 'healthy'
+    # Verify meta fields
+    assert 'meta' in body
+    assert 'request_id' in body['meta']
+    assert 'api_version' in body['meta']
+    assert body['meta']['api_version'] == 'v1'
 
 
 def test_health_check_handler_not_found():

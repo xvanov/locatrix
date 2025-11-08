@@ -20,6 +20,7 @@ try:
         format_error_response
     )
     from utils.logging import get_logger
+    from utils.request_id import generate_request_id, extract_api_version
 except ImportError:
     # Fallback for local testing from project root
     from src.services.job_service import JobService
@@ -29,6 +30,7 @@ except ImportError:
         format_error_response
     )
     from src.utils.logging import get_logger
+    from src.utils.request_id import generate_request_id, extract_api_version
 
 
 logger = get_logger(__name__)
@@ -51,13 +53,22 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         API Gateway HTTP API response with status code and body
     """
-    # Extract request ID for logging
-    request_id = event.get('requestContext', {}).get('requestId', '')
+    # Generate request ID in format: req_{timestamp}_{random}
+    request_id = generate_request_id()
     logger.set_request_id(request_id)
     
     # Extract HTTP method and path from event
     http_method = event.get('requestContext', {}).get('http', {}).get('method', '')
     path = event.get('requestContext', {}).get('http', {}).get('path', '')
+    
+    # Extract API version from path (defaults to v1)
+    api_version = extract_api_version(path)
+    
+    # Extract correlation ID from headers if present
+    headers = event.get('headers', {}) or {}
+    correlation_id = headers.get('X-Correlation-ID') or headers.get('x-correlation-id')
+    if correlation_id:
+        logger.set_correlation_id(correlation_id)
     
     # Handle OPTIONS for CORS preflight
     if http_method == 'OPTIONS':
@@ -68,21 +79,21 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
     
     try:
-        # Route to appropriate handler
+        # Route to appropriate handler based on method and path
         if http_method == 'GET' and path == '/health':
-            return handle_health_check(event, context)
+            return handle_health_check(event, context, request_id, api_version)
         
         if http_method == 'POST' and path == '/api/v1/jobs':
-            return handle_create_job(event, context)
+            return handle_create_job(event, context, request_id, api_version, correlation_id)
         
         # Match GET /api/v1/jobs/{job_id} or DELETE /api/v1/jobs/{job_id}
-        match = re.match(r'^/api/v1/jobs/([^/]+)$', path)
+        match = re.match(r'^/api/v\d+/jobs/([^/]+)$', path)
         if match:
             job_id = match.group(1)
             if http_method == 'GET':
-                return handle_get_job(event, context, job_id)
+                return handle_get_job(event, context, job_id, request_id, api_version)
             elif http_method == 'DELETE':
-                return handle_cancel_job(event, context, job_id)
+                return handle_cancel_job(event, context, job_id, request_id, api_version)
         
         # Default 404 response
         return {
@@ -94,7 +105,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'code': 'NOT_FOUND',
                     'message': f'Endpoint {http_method} {path} not found'
                 },
-                'meta': {'request_id': request_id}
+                'meta': {
+                    'request_id': request_id,
+                    'api_version': api_version
+                }
             })
         }
     
@@ -104,7 +118,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             exc_info=True,
             context={'method': http_method, 'path': path}
         )
-        error_response = format_error_response(e, request_id=request_id)
+        error_response = format_error_response(e, request_id=request_id, api_version=api_version)
         status_code = getattr(e, 'status_code', 500) if hasattr(e, 'status_code') else 500
         return {
             'statusCode': status_code,
@@ -113,7 +127,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
 
-def handle_health_check(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def handle_health_check(event: Dict[str, Any], context: Any, request_id: str, api_version: str) -> Dict[str, Any]:
     """
     Handle GET /health endpoint.
     
@@ -122,6 +136,8 @@ def handle_health_check(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Args:
         event: API Gateway HTTP API event
         context: Lambda context object
+        request_id: Request ID for correlation
+        api_version: API version string
         
     Returns:
         API Gateway HTTP API response with health status
@@ -130,10 +146,16 @@ def handle_health_check(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # In future stories, this will check actual service connectivity
     response_body = {
         'status': 'healthy',
-        'services': {
-            'dynamodb': 'healthy',
-            's3': 'healthy',
-            'sagemaker': 'healthy'
+        'data': {
+            'services': {
+                'dynamodb': 'healthy',
+                's3': 'healthy',
+                'sagemaker': 'healthy'
+            }
+        },
+        'meta': {
+            'request_id': request_id,
+            'api_version': api_version
         }
     }
     
@@ -144,7 +166,7 @@ def handle_health_check(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     }
 
 
-def handle_create_job(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def handle_create_job(event: Dict[str, Any], context: Any, request_id: str, api_version: str, correlation_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Handle POST /api/v1/jobs endpoint.
     
@@ -153,12 +175,16 @@ def handle_create_job(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Args:
         event: API Gateway HTTP API event
         context: Lambda context object
+        request_id: Request ID for correlation
+        api_version: API version string
+        correlation_id: Optional correlation ID for distributed tracing
         
     Returns:
         API Gateway HTTP API response with job data
     """
-    request_id = event.get('requestContext', {}).get('requestId', '')
     logger.set_request_id(request_id)
+    if correlation_id:
+        logger.set_correlation_id(correlation_id)
     
     try:
         # Parse request body
@@ -185,39 +211,52 @@ def handle_create_job(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if len(file_content) > MAX_FILE_SIZE:
             raise FileTooLargeError(len(file_content), MAX_FILE_SIZE)
         
+        # Validate MIME type matches declared format
+        _validate_file_mime_type(file_content, blueprint_format)
+        
         # Create job service
         job_service = JobService()
         logger.set_job_id(None)  # Will be set after job creation
         
-        # Create job
+        # Create job with request_id, correlation_id, and api_version
         file_obj = BytesIO(file_content)
         job = job_service.create_job(
             blueprint_file=file_obj,
             blueprint_format=blueprint_format,
-            filename=filename
+            filename=filename,
+            request_id=request_id,
+            correlation_id=correlation_id,
+            api_version=api_version
         )
         
         logger.set_job_id(job.job_id)
         logger.info(
             f"Job created: {job.job_id}",
-            context={'job_id': job.job_id, 'format': blueprint_format}
+            context={'job_id': job.job_id, 'format': blueprint_format, 'api_version': api_version}
         )
         
         # Return success response
         response_body = {
             'status': 'success',
             'data': job.to_dict(),
-            'meta': {'request_id': request_id}
+            'meta': {
+                'request_id': request_id,
+                'api_version': api_version
+            }
         }
+        
+        # Add request ID to response headers
+        headers = get_cors_headers()
+        headers['X-Request-ID'] = request_id
         
         return {
             'statusCode': 201,
-            'headers': get_cors_headers(),
+            'headers': headers,
             'body': json.dumps(response_body)
         }
     
     except (InvalidFileFormatError, FileTooLargeError) as e:
-        error_response = format_error_response(e, request_id=request_id)
+        error_response = format_error_response(e, request_id=request_id, api_version=api_version)
         return {
             'statusCode': e.status_code,
             'headers': get_cors_headers(),
@@ -228,7 +267,7 @@ def handle_create_job(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             f"Error creating job: {str(e)}",
             exc_info=True
         )
-        error_response = format_error_response(e, request_id=request_id)
+        error_response = format_error_response(e, request_id=request_id, api_version=api_version)
         status_code = getattr(e, 'status_code', 500) if hasattr(e, 'status_code') else 500
         return {
             'statusCode': status_code,
@@ -237,7 +276,7 @@ def handle_create_job(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
 
-def handle_get_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[str, Any]:
+def handle_get_job(event: Dict[str, Any], context: Any, job_id: str, request_id: str, api_version: str) -> Dict[str, Any]:
     """
     Handle GET /api/v1/jobs/{job_id} endpoint.
     
@@ -247,13 +286,24 @@ def handle_get_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[str
         event: API Gateway HTTP API event
         context: Lambda context object
         job_id: Job identifier
+        request_id: Request ID for correlation
+        api_version: API version string
         
     Returns:
         API Gateway HTTP API response with job data
     """
-    request_id = event.get('requestContext', {}).get('requestId', '')
     logger.set_request_id(request_id)
     logger.set_job_id(job_id)
+    
+    # Validate job_id format
+    if not job_id or not job_id.startswith('job_'):
+        from utils.errors import LocationDetectionError
+        raise LocationDetectionError(
+            code='INVALID_JOB_ID',
+            message=f"Invalid job ID format: {job_id}",
+            details={'job_id': job_id},
+            status_code=400
+        )
     
     try:
         # Create job service
@@ -264,19 +314,26 @@ def handle_get_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[str
         
         logger.info(
             f"Job retrieved: {job_id}",
-            context={'job_id': job_id, 'status': job.status.value}
+            context={'job_id': job_id, 'status': job.status.value, 'api_version': api_version}
         )
         
         # Return success response
         response_body = {
             'status': 'success',
             'data': job.to_dict(),
-            'meta': {'request_id': request_id}
+            'meta': {
+                'request_id': request_id,
+                'api_version': api_version
+            }
         }
+        
+        # Add request ID to response headers
+        headers = get_cors_headers()
+        headers['X-Request-ID'] = request_id
         
         return {
             'statusCode': 200,
-            'headers': get_cors_headers(),
+            'headers': headers,
             'body': json.dumps(response_body)
         }
     
@@ -291,7 +348,7 @@ def handle_get_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[str
         except Exception:
             pass  # Don't let logging errors break error handling
         
-        error_response = format_error_response(e, request_id=request_id)
+        error_response = format_error_response(e, request_id=request_id, api_version=api_version)
         status_code = getattr(e, 'status_code', 500) if hasattr(e, 'status_code') else 500
         return {
             'statusCode': status_code,
@@ -300,7 +357,7 @@ def handle_get_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[str
         }
 
 
-def handle_cancel_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[str, Any]:
+def handle_cancel_job(event: Dict[str, Any], context: Any, job_id: str, request_id: str, api_version: str) -> Dict[str, Any]:
     """
     Handle DELETE /api/v1/jobs/{job_id} endpoint.
     
@@ -310,13 +367,24 @@ def handle_cancel_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[
         event: API Gateway HTTP API event
         context: Lambda context object
         job_id: Job identifier
+        request_id: Request ID for correlation
+        api_version: API version string
         
     Returns:
         API Gateway HTTP API response with updated job data
     """
-    request_id = event.get('requestContext', {}).get('requestId', '')
     logger.set_request_id(request_id)
     logger.set_job_id(job_id)
+    
+    # Validate job_id format
+    if not job_id or not job_id.startswith('job_'):
+        from utils.errors import LocationDetectionError
+        raise LocationDetectionError(
+            code='INVALID_JOB_ID',
+            message=f"Invalid job ID format: {job_id}",
+            details={'job_id': job_id},
+            status_code=400
+        )
     
     try:
         # Create job service
@@ -327,19 +395,26 @@ def handle_cancel_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[
         
         logger.info(
             f"Job cancelled: {job_id}",
-            context={'job_id': job_id}
+            context={'job_id': job_id, 'api_version': api_version}
         )
         
         # Return success response
         response_body = {
             'status': 'success',
             'data': job.to_dict(),
-            'meta': {'request_id': request_id}
+            'meta': {
+                'request_id': request_id,
+                'api_version': api_version
+            }
         }
+        
+        # Add request ID to response headers
+        headers = get_cors_headers()
+        headers['X-Request-ID'] = request_id
         
         return {
             'statusCode': 200,
-            'headers': get_cors_headers(),
+            'headers': headers,
             'body': json.dumps(response_body)
         }
     
@@ -354,13 +429,44 @@ def handle_cancel_job(event: Dict[str, Any], context: Any, job_id: str) -> Dict[
         except Exception:
             pass  # Don't let logging errors break error handling
         
-        error_response = format_error_response(e, request_id=request_id)
+        error_response = format_error_response(e, request_id=request_id, api_version=api_version)
         status_code = getattr(e, 'status_code', 500) if hasattr(e, 'status_code') else 500
         return {
             'statusCode': status_code,
             'headers': get_cors_headers(),
             'body': json.dumps(error_response)
         }
+
+
+def _validate_file_mime_type(file_content: bytes, declared_format: str) -> None:
+    """
+    Validate that file content matches declared MIME type.
+    
+    Args:
+        file_content: File content bytes
+        declared_format: Declared file format (png, jpg, pdf)
+        
+    Raises:
+        InvalidFileFormatError: If MIME type doesn't match declared format
+    """
+    # File signatures (magic numbers) for validation
+    PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
+    JPEG_SIGNATURE_START = b'\xff\xd8\xff'
+    PDF_SIGNATURE = b'%PDF'
+    
+    # Check file signature matches declared format
+    if declared_format == 'png':
+        if not file_content.startswith(PNG_SIGNATURE):
+            # File signature doesn't match PNG format
+            raise InvalidFileFormatError(declared_format)
+    elif declared_format in ['jpg', 'jpeg']:
+        if not file_content.startswith(JPEG_SIGNATURE_START):
+            # File signature doesn't match JPEG format
+            raise InvalidFileFormatError(declared_format)
+    elif declared_format == 'pdf':
+        if not file_content.startswith(PDF_SIGNATURE):
+            # File signature doesn't match PDF format
+            raise InvalidFileFormatError(declared_format)
 
 
 def get_cors_headers() -> Dict[str, str]:
