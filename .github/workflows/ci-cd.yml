@@ -54,29 +54,38 @@ jobs:
           ls -la .aws-sam/ || echo "Warning: .aws-sam directory not found immediately after build"
         continue-on-error: false
 
-      - name: Verify and upload build artifacts
-        id: upload-artifacts
+      - name: Verify build output
+        id: verify-build
         run: |
           if [ ! -d ".aws-sam" ]; then
             echo "Error: .aws-sam directory was not created"
             exit 1
           fi
-          if [ -z "$(ls -A .aws-sam 2>/dev/null)" ]; then
-            echo "Error: .aws-sam directory is empty"
+          
+          # Check for actual files, not just directories
+          file_count=$(find .aws-sam -type f | wc -l)
+          if [ "$file_count" -eq 0 ]; then
+            echo "Error: .aws-sam directory contains no files"
+            echo "Current directory contents:"
             ls -la
+            echo "Checking for .aws-sam:"
+            ls -la .aws-sam/ || echo ".aws-sam directory exists but is empty"
+            echo "Directory structure:"
+            find .aws-sam -type d
             exit 1
           fi
-          echo "✅ Build output verified"
-          echo "Contents of .aws-sam/:"
-          find .aws-sam -type f | head -20
+          
+          echo "✅ Build output verified - found $file_count files"
+          echo "Sample files:"
+          find .aws-sam -type f | head -10
           echo "artifact-ready=true" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
-        if: steps.upload-artifacts.outcome == 'success'
+        if: steps.verify-build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
-          path: .aws-sam/**
+          path: .aws-sam
           retention-days: 1
           if-no-files-found: error
 
