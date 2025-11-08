@@ -272,37 +272,79 @@ jobs:
           BLUEPRINTS_BUCKET="location-detection-dev-blueprints"
           CACHE_BUCKET="location-detection-dev-cache"
           
-          BUCKETS_EXIST=false
-          for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
-            if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
-              echo "❌ ERROR: Bucket $BUCKET still exists!"
-              echo "This will cause deployment to fail with AlreadyExists error."
-              BUCKETS_EXIST=true
-            else
-              echo "✅ Bucket $BUCKET confirmed deleted"
+          # Function to check if bucket truly exists (not just in deleting state)
+          check_bucket_exists() {
+            local BUCKET=$1
+            # Try to list objects - this will fail if bucket is deleting or doesn't exist
+            aws s3api list-objects-v2 --bucket "$BUCKET" --max-items 1 --region ${{ env.AWS_REGION }} >/dev/null 2>&1
+            return $?
+          }
+          
+          MAX_VERIFICATION_RETRIES=5
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_VERIFICATION_RETRIES ]; do
+            BUCKETS_EXIST=false
+            for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+              if check_bucket_exists "$BUCKET"; then
+                echo "❌ ERROR: Bucket $BUCKET exists and is accessible!"
+                BUCKETS_EXIST=true
+              else
+                # Check if it's just in deleting state (head-bucket works but list fails)
+                if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+                  echo "⏳ Bucket $BUCKET is in 'deleting' state (head works but list fails)"
+                  BUCKETS_EXIST=true
+                else
+                  echo "✅ Bucket $BUCKET confirmed deleted"
+                fi
+              fi
+            done
+            
+            if [ "$BUCKETS_EXIST" = "false" ]; then
+              echo "✅ All buckets verified deleted - safe to proceed with deployment"
+              exit 0
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_VERIFICATION_RETRIES ]; then
+              echo ""
+              echo "⚠️  CRITICAL: Buckets still exist (attempt $RETRY_COUNT/$MAX_VERIFICATION_RETRIES)"
+              echo "Attempting emergency cleanup..."
+              chmod +x scripts/delete-buckets.sh
+              ./scripts/delete-buckets.sh dev || true
+              WAIT_TIME=$((90 + RETRY_COUNT * 30))  # Increase wait time with each retry
+              echo "Waiting ${WAIT_TIME} seconds for AWS to propagate deletions..."
+              sleep $WAIT_TIME
             fi
           done
           
-          if [ "$BUCKETS_EXIST" = "true" ]; then
-            echo ""
-            echo "⚠️  CRITICAL: Buckets still exist. Attempting emergency cleanup..."
-            ./scripts/delete-buckets.sh dev || true
-            echo "Waiting 60 seconds for AWS to propagate deletions..."
-            sleep 60
-            
-            # Check again
-            for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
-              if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
-                echo "❌ FATAL: Bucket $BUCKET still exists after emergency cleanup"
-                echo "Deployment will fail. Buckets may be in a 'deleting' state."
-                echo "Please wait 5-10 minutes and try again, or manually delete from AWS console."
-                exit 1
-              fi
-            done
-            echo "✅ Emergency cleanup successful"
-          fi
-          
-          echo "✅ All buckets verified deleted - safe to proceed with deployment"
+          # Final check - if buckets still exist, fail hard
+          echo ""
+          echo "❌ FATAL: Buckets still exist after $MAX_VERIFICATION_RETRIES cleanup attempts"
+          for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+            if check_bucket_exists "$BUCKET"; then
+              echo "  - $BUCKET: EXISTS and accessible"
+            elif aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+              echo "  - $BUCKET: In 'deleting' state (waiting for AWS to finish)"
+            else
+              echo "  - $BUCKET: deleted"
+            fi
+          done
+          echo ""
+          echo "Deployment will fail. Buckets may be in a 'deleting' state."
+          echo "Please wait 5-10 minutes and try again, or manually delete from AWS console."
+          exit 1
+
+      - name: Final bucket cleanup (right before deploy)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          echo "🔧 Final bucket cleanup right before deployment..."
+          chmod +x scripts/delete-buckets.sh
+          ./scripts/delete-buckets.sh dev || true
+          echo "Waiting 30 seconds after final cleanup..."
+          sleep 30
 
       - name: SAM Deploy to Dev
         id: deploy
