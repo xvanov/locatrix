@@ -214,6 +214,13 @@ jobs:
           # Run cleanup steps only (non-interactive, cleanup-only mode)
           # This handles: bucket cleanup, conflicting stack cleanup, failed stack cleanup
           ./scripts/test-deploy-local.sh dev --non-interactive --cleanup-only
+          
+          # Add extra wait time to match local build time
+          # (Locally, build takes 1-3 minutes, giving AWS time to fully delete buckets)
+          echo ""
+          echo "⏳ Waiting additional 2 minutes to ensure buckets are fully deleted..."
+          echo "   (This matches the build time in local execution)"
+          sleep 120
 
       - name: Download build artifacts
         id: download-artifacts
@@ -255,6 +262,47 @@ jobs:
           echo "⚠️ Artifacts not available, rebuilding..."
           sam build --use-container || sam build
           echo "✅ Rebuild completed"
+
+      - name: Verify buckets are deleted before deployment
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          echo "🔍 Verifying buckets are deleted before deployment..."
+          BLUEPRINTS_BUCKET="location-detection-dev-blueprints"
+          CACHE_BUCKET="location-detection-dev-cache"
+          
+          BUCKETS_EXIST=false
+          for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+            if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+              echo "❌ ERROR: Bucket $BUCKET still exists!"
+              echo "This will cause deployment to fail with AlreadyExists error."
+              BUCKETS_EXIST=true
+            else
+              echo "✅ Bucket $BUCKET confirmed deleted"
+            fi
+          done
+          
+          if [ "$BUCKETS_EXIST" = "true" ]; then
+            echo ""
+            echo "⚠️  CRITICAL: Buckets still exist. Attempting emergency cleanup..."
+            ./scripts/delete-buckets.sh dev || true
+            echo "Waiting 60 seconds for AWS to propagate deletions..."
+            sleep 60
+            
+            # Check again
+            for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+              if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+                echo "❌ FATAL: Bucket $BUCKET still exists after emergency cleanup"
+                echo "Deployment will fail. Buckets may be in a 'deleting' state."
+                echo "Please wait 5-10 minutes and try again, or manually delete from AWS console."
+                exit 1
+              fi
+            done
+            echo "✅ Emergency cleanup successful"
+          fi
+          
+          echo "✅ All buckets verified deleted - safe to proceed with deployment"
 
       - name: SAM Deploy to Dev
         id: deploy
