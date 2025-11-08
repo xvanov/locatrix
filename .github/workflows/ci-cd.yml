@@ -236,16 +236,42 @@ jobs:
           # Clean up orphaned resources that might exist outside the stack
           echo "Checking for orphaned resources..."
           
-          # Check and delete orphaned S3 buckets
+          # Check and delete orphaned S3 buckets (with proper versioning/MFA handling)
           BLUEPRINTS_BUCKET="location-detection-${ENV}-blueprints"
           CACHE_BUCKET="location-detection-${ENV}-cache"
           
           for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
             if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
               echo "⚠️ Found orphaned S3 bucket: $BUCKET"
-              echo "Deleting bucket contents and bucket..."
+              
+              # Delete all objects and versions
+              echo "Deleting bucket contents..."
               aws s3 rm s3://$BUCKET --recursive --region ${{ env.AWS_REGION }} || true
-              aws s3api delete-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} || echo "Could not delete bucket (may have contents or versioning)"
+              
+              # Delete all object versions (for versioned buckets)
+              VERSIONS=$(aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --region ${{ env.AWS_REGION }} 2>/dev/null)
+              if [ "$VERSIONS" != "null" ] && [ "$VERSIONS" != "{}" ] && [ -n "$VERSIONS" ]; then
+                echo "Deleting object versions..."
+                aws s3api delete-objects --bucket "$BUCKET" --delete "$VERSIONS" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              fi
+              
+              # Delete delete markers
+              MARKERS=$(aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --region ${{ env.AWS_REGION }} 2>/dev/null)
+              if [ "$MARKERS" != "null" ] && [ "$MARKERS" != "{}" ] && [ -n "$MARKERS" ]; then
+                echo "Deleting delete markers..."
+                aws s3api delete-objects --bucket "$BUCKET" --delete "$MARKERS" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              fi
+              
+              # Disable versioning if enabled
+              echo "Disabling versioning..."
+              aws s3api put-bucket-versioning \
+                --bucket "$BUCKET" \
+                --versioning-configuration Status=Suspended \
+                --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              
+              # Delete bucket
+              echo "Deleting bucket..."
+              aws s3api delete-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} && echo "✅ Deleted bucket: $BUCKET" || echo "⚠️ Could not delete bucket: $BUCKET (may need manual cleanup)"
             fi
           done
           
@@ -254,10 +280,13 @@ jobs:
           PREVIEW_TABLE="${ENV}-preview-cache"
           
           for TABLE in "$JOBS_TABLE" "$PREVIEW_TABLE"; do
-            if aws dynamodb describe-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} 2>/dev/null | grep -q "TableName"; then
-              echo "⚠️ Found orphaned DynamoDB table: $TABLE"
-              echo "Deleting table..."
-              aws dynamodb delete-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} || echo "Could not delete table"
+            TABLE_STATUS=$(aws dynamodb describe-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} --query 'Table.TableStatus' --output text 2>/dev/null || echo "NOT_FOUND")
+            if [ "$TABLE_STATUS" != "NOT_FOUND" ]; then
+              echo "⚠️ Found orphaned DynamoDB table: $TABLE (status: $TABLE_STATUS)"
+              if [ "$TABLE_STATUS" = "ACTIVE" ] || [ "$TABLE_STATUS" = "DELETING" ]; then
+                echo "Deleting table..."
+                aws dynamodb delete-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} && echo "✅ Deleted table: $TABLE" || echo "⚠️ Could not delete table: $TABLE"
+              fi
             fi
           done
           
@@ -413,16 +442,42 @@ jobs:
           # Clean up orphaned resources that might exist outside the stack
           echo "Checking for orphaned resources..."
           
-          # Check and delete orphaned S3 buckets
+          # Check and delete orphaned S3 buckets (with proper versioning/MFA handling)
           BLUEPRINTS_BUCKET="location-detection-${ENV}-blueprints"
           CACHE_BUCKET="location-detection-${ENV}-cache"
           
           for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
             if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
               echo "⚠️ Found orphaned S3 bucket: $BUCKET"
-              echo "Deleting bucket contents and bucket..."
+              
+              # Delete all objects and versions
+              echo "Deleting bucket contents..."
               aws s3 rm s3://$BUCKET --recursive --region ${{ env.AWS_REGION }} || true
-              aws s3api delete-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} || echo "Could not delete bucket (may have contents or versioning)"
+              
+              # Delete all object versions (for versioned buckets)
+              VERSIONS=$(aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --region ${{ env.AWS_REGION }} 2>/dev/null)
+              if [ "$VERSIONS" != "null" ] && [ "$VERSIONS" != "{}" ] && [ -n "$VERSIONS" ]; then
+                echo "Deleting object versions..."
+                aws s3api delete-objects --bucket "$BUCKET" --delete "$VERSIONS" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              fi
+              
+              # Delete delete markers
+              MARKERS=$(aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --region ${{ env.AWS_REGION }} 2>/dev/null)
+              if [ "$MARKERS" != "null" ] && [ "$MARKERS" != "{}" ] && [ -n "$MARKERS" ]; then
+                echo "Deleting delete markers..."
+                aws s3api delete-objects --bucket "$BUCKET" --delete "$MARKERS" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              fi
+              
+              # Disable versioning if enabled
+              echo "Disabling versioning..."
+              aws s3api put-bucket-versioning \
+                --bucket "$BUCKET" \
+                --versioning-configuration Status=Suspended \
+                --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              
+              # Delete bucket
+              echo "Deleting bucket..."
+              aws s3api delete-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} && echo "✅ Deleted bucket: $BUCKET" || echo "⚠️ Could not delete bucket: $BUCKET (may need manual cleanup)"
             fi
           done
           
@@ -431,10 +486,13 @@ jobs:
           PREVIEW_TABLE="${ENV}-preview-cache"
           
           for TABLE in "$JOBS_TABLE" "$PREVIEW_TABLE"; do
-            if aws dynamodb describe-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} 2>/dev/null | grep -q "TableName"; then
-              echo "⚠️ Found orphaned DynamoDB table: $TABLE"
-              echo "Deleting table..."
-              aws dynamodb delete-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} || echo "Could not delete table"
+            TABLE_STATUS=$(aws dynamodb describe-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} --query 'Table.TableStatus' --output text 2>/dev/null || echo "NOT_FOUND")
+            if [ "$TABLE_STATUS" != "NOT_FOUND" ]; then
+              echo "⚠️ Found orphaned DynamoDB table: $TABLE (status: $TABLE_STATUS)"
+              if [ "$TABLE_STATUS" = "ACTIVE" ] || [ "$TABLE_STATUS" = "DELETING" ]; then
+                echo "Deleting table..."
+                aws dynamodb delete-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} && echo "✅ Deleted table: $TABLE" || echo "⚠️ Could not delete table: $TABLE"
+              fi
             fi
           done
           
