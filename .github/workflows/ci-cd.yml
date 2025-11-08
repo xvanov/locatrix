@@ -50,10 +50,12 @@ jobs:
           echo "Building SAM application..."
           sam build --use-container || sam build
           echo "Build completed"
+          echo "Checking build output..."
+          ls -la .aws-sam/ || echo "Warning: .aws-sam directory not found immediately after build"
         continue-on-error: false
 
-      - name: Verify build output
-        id: verify-build
+      - name: Verify and upload build artifacts
+        id: upload-artifacts
         run: |
           if [ ! -d ".aws-sam" ]; then
             echo "Error: .aws-sam directory was not created"
@@ -61,19 +63,22 @@ jobs:
           fi
           if [ -z "$(ls -A .aws-sam 2>/dev/null)" ]; then
             echo "Error: .aws-sam directory is empty"
+            ls -la
             exit 1
           fi
           echo "✅ Build output verified"
-          ls -la .aws-sam/
-          echo "build-success=true" >> $GITHUB_OUTPUT
+          echo "Contents of .aws-sam/:"
+          find .aws-sam -type f | head -20
+          echo "artifact-ready=true" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
-        if: steps.verify-build.outcome == 'success'
+        if: steps.upload-artifacts.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
-          path: .aws-sam/
+          path: .aws-sam/**
           retention-days: 1
+          if-no-files-found: error
 
   lint:
     name: Lint and Type Check
@@ -198,12 +203,18 @@ jobs:
         if: steps.download-artifacts.outcome == 'failure' || steps.verify-artifacts.outcome == 'failure'
         run: |
           echo "⚠️ Artifacts not available, rebuilding..."
-          sam build --use-container
+          sam build --use-container || sam build
+          echo "✅ Rebuild completed"
 
       - name: SAM Deploy to Dev
         id: deploy
         run: |
-          sam deploy --config-env dev --no-confirm-changeset --no-fail-on-empty-changeset
+          sam deploy \
+            --config-file samconfig.dev.toml \
+            --stack-name location-detection-dev \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --region ${{ env.AWS_REGION }}
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
@@ -280,12 +291,18 @@ jobs:
         if: steps.download-artifacts.outcome == 'failure' || steps.verify-artifacts.outcome == 'failure'
         run: |
           echo "⚠️ Artifacts not available, rebuilding..."
-          sam build --use-container
+          sam build --use-container || sam build
+          echo "✅ Rebuild completed"
 
       - name: SAM Deploy to Prod
         id: deploy
         run: |
-          sam deploy --config-env prod --no-confirm-changeset --no-fail-on-empty-changeset
+          sam deploy \
+            --config-file samconfig.prod.toml \
+            --stack-name location-detection-prod \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --region ${{ env.AWS_REGION }}
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
