@@ -55,6 +55,8 @@ jobs:
         with:
           name: build-artifacts
           path: .aws-sam/
+          retention-days: 1
+          if-no-files-found: error
 
   lint:
     name: Lint and Type Check
@@ -137,11 +139,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
 
       - name: Install SAM CLI
         uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r src/requirements.txt
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -151,9 +159,29 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Download build artifacts
+        id: download-artifacts
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
+          path: .aws-sam/
+        continue-on-error: true
+
+      - name: Verify artifacts downloaded
+        if: steps.download-artifacts.outcome == 'success'
+        id: verify-artifacts
+        run: |
+          if [ ! -d ".aws-sam" ] || [ -z "$(ls -A .aws-sam 2>/dev/null)" ]; then
+            echo "Artifacts directory is empty or missing"
+            exit 1
+          fi
+          echo "✅ Build artifacts verified"
+        continue-on-error: true
+
+      - name: SAM Build (fallback if artifacts not available)
+        if: steps.download-artifacts.outcome == 'failure' || steps.verify-artifacts.outcome == 'failure'
+        run: |
+          echo "⚠️ Artifacts not available, rebuilding..."
+          sam build --use-container
 
       - name: SAM Deploy to Dev
         id: deploy
@@ -193,11 +221,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
 
       - name: Install SAM CLI
         uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r src/requirements.txt
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -207,9 +241,29 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Download build artifacts
+        id: download-artifacts
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
+          path: .aws-sam/
+        continue-on-error: true
+
+      - name: Verify artifacts downloaded
+        if: steps.download-artifacts.outcome == 'success'
+        id: verify-artifacts
+        run: |
+          if [ ! -d ".aws-sam" ] || [ -z "$(ls -A .aws-sam 2>/dev/null)" ]; then
+            echo "Artifacts directory is empty or missing"
+            exit 1
+          fi
+          echo "✅ Build artifacts verified"
+        continue-on-error: true
+
+      - name: SAM Build (fallback if artifacts not available)
+        if: steps.download-artifacts.outcome == 'failure' || steps.verify-artifacts.outcome == 'failure'
+        run: |
+          echo "⚠️ Artifacts not available, rebuilding..."
+          sam build --use-container
 
       - name: SAM Deploy to Prod
         id: deploy
