@@ -269,8 +269,16 @@ jobs:
           AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           echo "🔍 Verifying buckets are deleted before deployment..."
-          BLUEPRINTS_BUCKET="location-detection-dev-blueprints"
-          CACHE_BUCKET="location-detection-dev-cache"
+          # Get AWS Account ID for bucket names
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+          if [ -z "$ACCOUNT_ID" ]; then
+            echo "⚠️  Warning: Could not get AWS Account ID, using old bucket names"
+            BLUEPRINTS_BUCKET="location-detection-dev-blueprints"
+            CACHE_BUCKET="location-detection-dev-cache"
+          else
+            BLUEPRINTS_BUCKET="location-detection-dev-blueprints-${ACCOUNT_ID}"
+            CACHE_BUCKET="location-detection-dev-cache-${ACCOUNT_ID}"
+          fi
           
           # Function to check if bucket truly exists (not just in deleting state)
           check_bucket_exists() {
@@ -343,8 +351,8 @@ jobs:
           echo "🔧 Final bucket cleanup right before deployment..."
           chmod +x scripts/delete-buckets.sh
           ./scripts/delete-buckets.sh dev || true
-          echo "Waiting 30 seconds after final cleanup..."
-          sleep 30
+          echo "Waiting 60 seconds after final cleanup (buckets may be in deleting state)..."
+          sleep 60
 
       - name: SAM Deploy to Dev
         id: deploy

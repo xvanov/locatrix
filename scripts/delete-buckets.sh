@@ -7,10 +7,23 @@ set -e
 ENV=${1:-dev}
 REGION=${AWS_REGION:-us-east-1}
 
-BLUEPRINTS_BUCKET="location-detection-${ENV}-blueprints"
-CACHE_BUCKET="location-detection-${ENV}-cache"
+# Get AWS Account ID dynamically
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION" 2>/dev/null || echo "")
+
+if [ -z "$ACCOUNT_ID" ]; then
+  echo "⚠️  Warning: Could not get AWS Account ID, using old bucket names"
+  BLUEPRINTS_BUCKET="location-detection-${ENV}-blueprints"
+  CACHE_BUCKET="location-detection-${ENV}-cache"
+else
+  # Use new naming pattern with Account ID for uniqueness
+  BLUEPRINTS_BUCKET="location-detection-${ENV}-blueprints-${ACCOUNT_ID}"
+  CACHE_BUCKET="location-detection-${ENV}-cache-${ACCOUNT_ID}"
+fi
 
 echo "🗑️  Deleting buckets for environment: $ENV"
+if [ -n "$ACCOUNT_ID" ]; then
+  echo "Account ID: $ACCOUNT_ID"
+fi
 echo ""
 
 for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do

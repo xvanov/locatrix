@@ -66,7 +66,7 @@ Resources:
   BlueprintsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'location-detection-${Environment}-blueprints'
+      BucketName: !Sub 'location-detection-${Environment}-blueprints-${AWS::AccountId}'
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -92,7 +92,7 @@ Resources:
   CacheBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'location-detection-${Environment}-cache'
+      BucketName: !Sub 'location-detection-${Environment}-cache-${AWS::AccountId}'
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
