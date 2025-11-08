@@ -47,16 +47,33 @@ jobs:
       - name: SAM Build
         id: build
         run: |
-          sam build --use-container
+          echo "Building SAM application..."
+          sam build --use-container || sam build
+          echo "Build completed"
         continue-on-error: false
 
+      - name: Verify build output
+        id: verify-build
+        run: |
+          if [ ! -d ".aws-sam" ]; then
+            echo "Error: .aws-sam directory was not created"
+            exit 1
+          fi
+          if [ -z "$(ls -A .aws-sam 2>/dev/null)" ]; then
+            echo "Error: .aws-sam directory is empty"
+            exit 1
+          fi
+          echo "✅ Build output verified"
+          ls -la .aws-sam/
+          echo "build-success=true" >> $GITHUB_OUTPUT
+
       - name: Upload build artifacts
+        if: steps.verify-build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: .aws-sam/
           retention-days: 1
-          if-no-files-found: error
 
   lint:
     name: Lint and Type Check
