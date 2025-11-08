@@ -78,14 +78,29 @@ jobs:
           echo "✅ Build output verified - found $file_count files"
           echo "Sample files:"
           find .aws-sam -type f | head -10
+          echo "Full directory tree:"
+          tree .aws-sam || find .aws-sam
           echo "artifact-ready=true" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
         if: steps.verify-build.outcome == 'success'
+        run: |
+          echo "Preparing to upload artifacts..."
+          echo "Checking .aws-sam exists:"
+          ls -la .aws-sam || exit 1
+          echo "File count:"
+          find .aws-sam -type f | wc -l
+          echo "Creating archive..."
+          tar -czf build-artifacts.tar.gz .aws-sam/ || exit 1
+          echo "Archive created, size:"
+          ls -lh build-artifacts.tar.gz
+
+      - name: Upload build artifacts archive
+        if: steps.verify-build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
-          path: .aws-sam
+          path: build-artifacts.tar.gz
           retention-days: 1
           if-no-files-found: error
 
@@ -194,11 +209,26 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
-          path: .aws-sam/
+          path: .
+        continue-on-error: true
+
+      - name: Extract build artifacts
+        if: steps.download-artifacts.outcome == 'success'
+        id: extract-artifacts
+        run: |
+          if [ -f "build-artifacts.tar.gz" ]; then
+            echo "Extracting build artifacts..."
+            tar -xzf build-artifacts.tar.gz
+            echo "✅ Artifacts extracted"
+            ls -la .aws-sam/ || echo "Warning: .aws-sam not found after extraction"
+          else
+            echo "Archive file not found"
+            exit 1
+          fi
         continue-on-error: true
 
       - name: Verify artifacts downloaded
-        if: steps.download-artifacts.outcome == 'success'
+        if: steps.download-artifacts.outcome == 'success' && steps.extract-artifacts.outcome == 'success'
         id: verify-artifacts
         run: |
           if [ ! -d ".aws-sam" ] || [ -z "$(ls -A .aws-sam 2>/dev/null)" ]; then
@@ -209,7 +239,7 @@ jobs:
         continue-on-error: true
 
       - name: SAM Build (fallback if artifacts not available)
-        if: steps.download-artifacts.outcome == 'failure' || steps.verify-artifacts.outcome == 'failure'
+        if: steps.download-artifacts.outcome == 'failure' || steps.extract-artifacts.outcome == 'failure' || steps.verify-artifacts.outcome == 'failure'
         run: |
           echo "⚠️ Artifacts not available, rebuilding..."
           sam build --use-container || sam build
@@ -282,11 +312,26 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
-          path: .aws-sam/
+          path: .
+        continue-on-error: true
+
+      - name: Extract build artifacts
+        if: steps.download-artifacts.outcome == 'success'
+        id: extract-artifacts
+        run: |
+          if [ -f "build-artifacts.tar.gz" ]; then
+            echo "Extracting build artifacts..."
+            tar -xzf build-artifacts.tar.gz
+            echo "✅ Artifacts extracted"
+            ls -la .aws-sam/ || echo "Warning: .aws-sam not found after extraction"
+          else
+            echo "Archive file not found"
+            exit 1
+          fi
         continue-on-error: true
 
       - name: Verify artifacts downloaded
-        if: steps.download-artifacts.outcome == 'success'
+        if: steps.download-artifacts.outcome == 'success' && steps.extract-artifacts.outcome == 'success'
         id: verify-artifacts
         run: |
           if [ ! -d ".aws-sam" ] || [ -z "$(ls -A .aws-sam 2>/dev/null)" ]; then
@@ -297,7 +342,7 @@ jobs:
         continue-on-error: true
 
       - name: SAM Build (fallback if artifacts not available)
-        if: steps.download-artifacts.outcome == 'failure' || steps.verify-artifacts.outcome == 'failure'
+        if: steps.download-artifacts.outcome == 'failure' || steps.extract-artifacts.outcome == 'failure' || steps.verify-artifacts.outcome == 'failure'
         run: |
           echo "⚠️ Artifacts not available, rebuilding..."
           sam build --use-container || sam build
