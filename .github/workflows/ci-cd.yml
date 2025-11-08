@@ -15,7 +15,7 @@ env:
   PYTHON_VERSION: '3.11'
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
   pull-requests: write
 
@@ -101,7 +101,7 @@ jobs:
         with:
           name: build-artifacts
           path: build-artifacts.tar.gz
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: error
 
   lint:
@@ -251,26 +251,40 @@ jobs:
           sam deploy \
             --config-file samconfig.dev.toml \
             --stack-name location-detection-dev \
+            --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --region ${{ env.AWS_REGION }}
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
+          SAM_CLI_TELEMETRY: 0
 
       - name: Get API URL from stack outputs
+        if: steps.deploy.outcome == 'success'
         id: stack-outputs
         run: |
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name location-detection-dev \
             --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
             --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+            --region ${{ env.AWS_REGION }} || echo "")
+          if [ -z "$API_URL" ]; then
+            echo "Warning: Could not retrieve API URL from stack outputs"
+            echo "api-url=" >> $GITHUB_OUTPUT
+          else
+            echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
 
       - name: Output deployment status
+        if: steps.deploy.outcome == 'success'
         run: |
           echo "✅ Deployment to dev environment completed successfully"
-          echo "API URL: ${{ steps.stack-outputs.outputs.api-url }}"
+          if [ -n "${{ steps.stack-outputs.outputs.api-url }}" ]; then
+            echo "API URL: ${{ steps.stack-outputs.outputs.api-url }}"
+          else
+            echo "API URL: Not available (check CloudFormation stack outputs)"
+          fi
 
   deploy-prod:
     name: Deploy to Prod Environment
@@ -354,32 +368,52 @@ jobs:
           sam deploy \
             --config-file samconfig.prod.toml \
             --stack-name location-detection-prod \
+            --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --region ${{ env.AWS_REGION }}
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
+          SAM_CLI_TELEMETRY: 0
+
+      - name: Extract tag name
+        id: tag
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "tag-name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "Extracted tag: $TAG_NAME"
 
       - name: Get API URL from stack outputs
+        if: steps.deploy.outcome == 'success'
         id: stack-outputs
         run: |
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name location-detection-prod \
             --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
             --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+            --region ${{ env.AWS_REGION }} || echo "")
+          if [ -z "$API_URL" ]; then
+            echo "Warning: Could not retrieve API URL from stack outputs"
+            echo "api-url=" >> $GITHUB_OUTPUT
+          else
+            echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: steps.deploy.outcome == 'success'
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          tag_name: ${{ steps.tag.outputs.tag-name }}
+          name: Release ${{ steps.tag.outputs.tag-name }}
           body: |
             Production deployment completed successfully.
-            API URL: ${{ steps.stack-outputs.outputs.api-url }}
+            
+            **API URL:** ${{ steps.stack-outputs.outputs.api-url }}
+            
+            **Deployed at:** ${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
           draft: false
           prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
