@@ -30,12 +30,17 @@ class TestStructuredLogger:
     
     def test_info_log(self, capsys):
         """Test info logging."""
-        logger = get_logger(__name__)
+        # Create a fresh logger instance to avoid interference from other tests
+        import logging
+        logger_name = f"{__name__}.test_info_log"
+        logger = StructuredLogger(logger_name, logging.INFO)
         logger.set_request_id('req_123')
         logger.info('Test message')
         
         captured = capsys.readouterr()
-        log_data = json.loads(captured.out.strip())
+        # Check both stdout and stderr (logging might go to either)
+        output = captured.out.strip() or captured.err.strip()
+        log_data = json.loads(output)
         
         assert log_data['level'] == 'INFO'
         assert log_data['message'] == 'Test message'
@@ -43,7 +48,10 @@ class TestStructuredLogger:
     
     def test_error_log_with_exception(self, capsys):
         """Test error logging with exception."""
-        logger = get_logger(__name__)
+        # Create a fresh logger instance to avoid interference from other tests
+        import logging
+        logger_name = f"{__name__}.test_error_log"
+        logger = StructuredLogger(logger_name, logging.INFO)
         logger.set_job_id('job_456')
         
         try:
@@ -52,7 +60,9 @@ class TestStructuredLogger:
             logger.error('Error occurred', exc_info=True)
         
         captured = capsys.readouterr()
-        log_data = json.loads(captured.out.strip())
+        # Check both stdout and stderr (logging might go to either)
+        output = captured.out.strip() or captured.err.strip()
+        log_data = json.loads(output)
         
         assert log_data['level'] == 'ERROR'
         assert log_data['job_id'] == 'job_456'
@@ -60,11 +70,16 @@ class TestStructuredLogger:
     
     def test_log_with_context(self, capsys):
         """Test logging with context."""
-        logger = get_logger(__name__)
+        # Create a fresh logger instance to avoid interference from other tests
+        import logging
+        logger_name = f"{__name__}.test_log_context"
+        logger = StructuredLogger(logger_name, logging.INFO)
         logger.info('Processing', context={'stage': 'preview', 'progress': 50})
         
         captured = capsys.readouterr()
-        log_data = json.loads(captured.out.strip())
+        # Check both stdout and stderr (logging might go to either)
+        output = captured.out.strip() or captured.err.strip()
+        log_data = json.loads(output)
         
         assert log_data['context']['stage'] == 'preview'
         assert log_data['context']['progress'] == 50

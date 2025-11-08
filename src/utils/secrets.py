@@ -61,11 +61,15 @@ def get_secret(secret_name: str, default: Optional[Any] = None) -> Any:
 
         secret_string = response.get('SecretString', '')
 
-        # Try to parse as JSON (most secrets are JSON)
-        try:
-            secret_value = json.loads(secret_string)
-        except json.JSONDecodeError:
-            # Not JSON, return as string
+        # Try to parse as JSON only if it looks like JSON (starts with { or [)
+        if secret_string.strip().startswith(('{', '[')):
+            try:
+                secret_value = json.loads(secret_string)
+            except json.JSONDecodeError:
+                # Not valid JSON, return as string
+                secret_value = secret_string
+        else:
+            # Doesn't look like JSON, return as string
             secret_value = secret_string
 
         # Cache the value with timestamp

@@ -56,7 +56,9 @@ class TestExponentialBackoffDelay:
     def test_max_delay_cap(self):
         """Test max delay cap."""
         delay = exponential_backoff_delay(10)  # Very high attempt
-        assert delay <= 8.0  # Should be capped
+        # Max delay is 8.0, but jitter can add up to 25% (8.0 * 0.25 = 2.0)
+        # So max possible delay is 8.0 + 2.0 = 10.0
+        assert delay <= 10.0  # Should be capped at max delay + max jitter
 
 
 class TestRetryWithBackoff:

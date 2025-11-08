@@ -127,7 +127,7 @@ def retry_with_backoff(
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args, **kwargs) -> T:
-            last_exception = None
+            last_exception: Optional[Exception] = None
             
             for attempt in range(max_retries + 1):
                 try:
@@ -164,9 +164,11 @@ def retry_with_backoff(
             if last_exception:
                 raise last_exception
             
+            # This should never happen, but satisfy type checker
+            raise RuntimeError("Retry logic failed unexpectedly")
+        
         return wrapper
     return decorator
-
 
 def retry_aws_call(
     func: Callable[..., T],
@@ -201,7 +203,7 @@ def retry_aws_call(
         >>>     max_retries=5
         >>> )
     """
-    last_exception = None
+    last_exception: Optional[Exception] = None
     
     for attempt in range(max_retries + 1):
         try:
@@ -230,4 +232,7 @@ def retry_aws_call(
     # Should never reach here, but just in case
     if last_exception:
         raise last_exception
+    
+    # This should never happen, but satisfy type checker
+    raise RuntimeError("Retry logic failed unexpectedly")
 

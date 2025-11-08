@@ -72,6 +72,9 @@ class TestGetParameter:
     
     def test_get_parameter_caching(self, mock_ssm_client):
         """Test parameter caching."""
+        # Clear cache before test to ensure clean state
+        clear_cache()
+        
         mock_ssm_client.get_parameter.return_value = {
             'Parameter': {
                 'Name': '/test/param',
@@ -80,17 +83,21 @@ class TestGetParameter:
             }
         }
         
-        # First call
+        # First call - should call API
         result1 = get_parameter('/test/param')
         assert result1 == 'test-value'
+        assert mock_ssm_client.get_parameter.call_count == 1
         
-        # Second call should use cache
-        clear_cache()
+        # Second call - should use cache, no API call
         result2 = get_parameter('/test/param')
         assert result2 == 'test-value'
+        assert mock_ssm_client.get_parameter.call_count == 1  # Still 1 due to cache
         
-        # Should only be called once due to caching
-        assert mock_ssm_client.get_parameter.call_count == 2
+        # Clear cache and call again - should call API again
+        clear_cache()
+        result3 = get_parameter('/test/param')
+        assert result3 == 'test-value'
+        assert mock_ssm_client.get_parameter.call_count == 2  # Now 2 after cache clear
 
 
 class TestGetParametersByPath:

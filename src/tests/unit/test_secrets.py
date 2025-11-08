@@ -24,6 +24,14 @@ def mock_secrets_client():
         yield mock_secrets
 
 
+@pytest.fixture(autouse=True)
+def clear_secrets_cache():
+    """Auto-clear cache before each test."""
+    clear_cache()
+    yield
+    clear_cache()
+
+
 class TestGetSecret:
     """Test get_secret function."""
     
@@ -33,7 +41,7 @@ class TestGetSecret:
             'SecretString': '{"username": "user", "password": "pass"}'
         }
         
-        result = get_secret('test-secret')
+        result = get_secret('test-secret-json')
         assert result == {'username': 'user', 'password': 'pass'}
     
     def test_get_secret_string(self, mock_secrets_client):
@@ -42,7 +50,7 @@ class TestGetSecret:
             'SecretString': 'simple-secret-value'
         }
         
-        result = get_secret('test-secret')
+        result = get_secret('test-secret-string')
         assert result == 'simple-secret-value'
     
     def test_get_secret_with_default(self, mock_secrets_client):
@@ -62,11 +70,11 @@ class TestGetSecret:
         }
         
         # First call
-        result1 = get_secret('test-secret')
+        result1 = get_secret('test-secret-cache')
         assert result1 == 'cached-secret'
         
         # Second call should use cache (within TTL)
-        result2 = get_secret('test-secret')
+        result2 = get_secret('test-secret-cache')
         assert result2 == 'cached-secret'
         
         # Should only be called once due to caching
@@ -74,7 +82,7 @@ class TestGetSecret:
         
         # Clear cache and call again
         clear_cache()
-        result3 = get_secret('test-secret')
+        result3 = get_secret('test-secret-cache')
         assert result3 == 'cached-secret'
         assert mock_secrets_client.get_secret_value.call_count == 2
 
@@ -88,7 +96,7 @@ class TestGetSecretString:
             'SecretString': 'simple-secret'
         }
         
-        result = get_secret_string('test-secret')
+        result = get_secret_string('test-secret-string-only')
         assert result == 'simple-secret'
     
     def test_get_secret_string_from_json(self, mock_secrets_client):
@@ -97,9 +105,12 @@ class TestGetSecretString:
             'SecretString': '{"key": "value"}'
         }
         
-        result = get_secret_string('test-secret')
+        result = get_secret_string('test-secret-json-to-string')
         assert isinstance(result, str)
-        assert 'key' in result
+        # Should be JSON string representation
+        import json
+        parsed = json.loads(result)
+        assert parsed['key'] == 'value'
 
 
 class TestGetSecretDict:
@@ -111,7 +122,7 @@ class TestGetSecretDict:
             'SecretString': '{"username": "user", "password": "pass"}'
         }
         
-        result = get_secret_dict('test-secret')
+        result = get_secret_dict('test-secret-dict-json')
         assert isinstance(result, dict)
         assert result['username'] == 'user'
         assert result['password'] == 'pass'
@@ -122,7 +133,6 @@ class TestGetSecretDict:
             'SecretString': '{"key": "value"}'
         }
         
-        result = get_secret_dict('test-secret')
+        result = get_secret_dict('test-secret-dict-string')
         assert isinstance(result, dict)
         assert result['key'] == 'value'
-

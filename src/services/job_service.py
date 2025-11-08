@@ -14,13 +14,13 @@ from botocore.exceptions import ClientError
 try:
     from models.job import Job, JobStatus
     from utils.errors import JobNotFoundError, JobAlreadyCompletedError, ServiceUnavailableError
-    from utils.retry import retry_aws_call, is_retryable_error
+    from utils.retry import retry_aws_call
     from utils.logging import get_logger
 except ImportError:
     # Fallback for local testing from project root
     from src.models.job import Job, JobStatus
     from src.utils.errors import JobNotFoundError, JobAlreadyCompletedError, ServiceUnavailableError
-    from src.utils.retry import retry_aws_call, is_retryable_error
+    from src.utils.retry import retry_aws_call
     from src.utils.logging import get_logger
 
 
