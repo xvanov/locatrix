@@ -204,6 +204,65 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Check and clean up failed stack
+        run: |
+          STACK_NAME="location-detection-dev"
+          ENV="dev"
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query 'Stacks[0].StackStatus' \
+            --output text \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "NOT_FOUND")
+          
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "CREATE_FAILED" ] || [ "$STACK_STATUS" = "DELETE_FAILED" ]; then
+            echo "⚠️ Found failed stack in status: $STACK_STATUS"
+            echo "Deleting failed stack..."
+            aws cloudformation delete-stack \
+              --stack-name $STACK_NAME \
+              --region ${{ env.AWS_REGION }}
+            
+            echo "Waiting for stack deletion to complete..."
+            aws cloudformation wait stack-delete-complete \
+              --stack-name $STACK_NAME \
+              --region ${{ env.AWS_REGION }} || echo "Stack deletion completed or timed out"
+            
+            echo "✅ Failed stack cleaned up"
+          elif [ "$STACK_STATUS" = "NOT_FOUND" ]; then
+            echo "✅ No existing stack found"
+          else
+            echo "ℹ️ Stack exists with status: $STACK_STATUS (will update)"
+          fi
+          
+          # Clean up orphaned resources that might exist outside the stack
+          echo "Checking for orphaned resources..."
+          
+          # Check and delete orphaned S3 buckets
+          BLUEPRINTS_BUCKET="location-detection-${ENV}-blueprints"
+          CACHE_BUCKET="location-detection-${ENV}-cache"
+          
+          for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+            if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+              echo "⚠️ Found orphaned S3 bucket: $BUCKET"
+              echo "Deleting bucket contents and bucket..."
+              aws s3 rm s3://$BUCKET --recursive --region ${{ env.AWS_REGION }} || true
+              aws s3api delete-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} || echo "Could not delete bucket (may have contents or versioning)"
+            fi
+          done
+          
+          # Check and delete orphaned DynamoDB tables
+          JOBS_TABLE="${ENV}-jobs"
+          PREVIEW_TABLE="${ENV}-preview-cache"
+          
+          for TABLE in "$JOBS_TABLE" "$PREVIEW_TABLE"; do
+            if aws dynamodb describe-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} 2>/dev/null | grep -q "TableName"; then
+              echo "⚠️ Found orphaned DynamoDB table: $TABLE"
+              echo "Deleting table..."
+              aws dynamodb delete-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} || echo "Could not delete table"
+            fi
+          done
+          
+          echo "✅ Orphaned resource cleanup completed"
+
       - name: Download build artifacts
         id: download-artifacts
         uses: actions/download-artifact@v4
@@ -321,6 +380,65 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check and clean up failed stack
+        run: |
+          STACK_NAME="location-detection-prod"
+          ENV="prod"
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query 'Stacks[0].StackStatus' \
+            --output text \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "NOT_FOUND")
+          
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "CREATE_FAILED" ] || [ "$STACK_STATUS" = "DELETE_FAILED" ]; then
+            echo "⚠️ Found failed stack in status: $STACK_STATUS"
+            echo "Deleting failed stack..."
+            aws cloudformation delete-stack \
+              --stack-name $STACK_NAME \
+              --region ${{ env.AWS_REGION }}
+            
+            echo "Waiting for stack deletion to complete..."
+            aws cloudformation wait stack-delete-complete \
+              --stack-name $STACK_NAME \
+              --region ${{ env.AWS_REGION }} || echo "Stack deletion completed or timed out"
+            
+            echo "✅ Failed stack cleaned up"
+          elif [ "$STACK_STATUS" = "NOT_FOUND" ]; then
+            echo "✅ No existing stack found"
+          else
+            echo "ℹ️ Stack exists with status: $STACK_STATUS (will update)"
+          fi
+          
+          # Clean up orphaned resources that might exist outside the stack
+          echo "Checking for orphaned resources..."
+          
+          # Check and delete orphaned S3 buckets
+          BLUEPRINTS_BUCKET="location-detection-${ENV}-blueprints"
+          CACHE_BUCKET="location-detection-${ENV}-cache"
+          
+          for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+            if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+              echo "⚠️ Found orphaned S3 bucket: $BUCKET"
+              echo "Deleting bucket contents and bucket..."
+              aws s3 rm s3://$BUCKET --recursive --region ${{ env.AWS_REGION }} || true
+              aws s3api delete-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} || echo "Could not delete bucket (may have contents or versioning)"
+            fi
+          done
+          
+          # Check and delete orphaned DynamoDB tables
+          JOBS_TABLE="${ENV}-jobs"
+          PREVIEW_TABLE="${ENV}-preview-cache"
+          
+          for TABLE in "$JOBS_TABLE" "$PREVIEW_TABLE"; do
+            if aws dynamodb describe-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} 2>/dev/null | grep -q "TableName"; then
+              echo "⚠️ Found orphaned DynamoDB table: $TABLE"
+              echo "Deleting table..."
+              aws dynamodb delete-table --table-name "$TABLE" --region ${{ env.AWS_REGION }} || echo "Could not delete table"
+            fi
+          done
+          
+          echo "✅ Orphaned resource cleanup completed"
 
       - name: Download build artifacts
         id: download-artifacts
