@@ -251,6 +251,7 @@ jobs:
           sam deploy \
             --config-file samconfig.dev.toml \
             --stack-name location-detection-dev \
+            --capabilities CAPABILITY_IAM \
             --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
@@ -368,6 +369,7 @@ jobs:
           sam deploy \
             --config-file samconfig.prod.toml \
             --stack-name location-detection-prod \
+            --capabilities CAPABILITY_IAM \
             --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
