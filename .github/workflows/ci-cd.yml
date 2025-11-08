@@ -204,12 +204,72 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Clean up orphaned S3 buckets (dev)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          ENV="dev"
+          BLUEPRINTS_BUCKET="location-detection-${ENV}-blueprints"
+          CACHE_BUCKET="location-detection-${ENV}-cache"
+          
+          echo "Checking for orphaned S3 buckets that might cause deployment conflicts..."
+          
+          for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+            if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+              echo "⚠️ Found bucket: $BUCKET"
+              
+              # Delete all objects
+              echo "  Deleting all objects..."
+              aws s3 rm s3://$BUCKET --recursive --region ${{ env.AWS_REGION }} || true
+              
+              # Delete all object versions
+              echo "  Deleting object versions..."
+              VERSIONS=$(aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --region ${{ env.AWS_REGION }} 2>/dev/null || echo "{}")
+              VERSION_COUNT=$(echo "$VERSIONS" | jq -r '.Objects | length // 0' 2>/dev/null || echo "0")
+              if [ "$VERSION_COUNT" -gt 0 ]; then
+                aws s3api delete-objects --bucket "$BUCKET" --delete "$VERSIONS" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              fi
+              
+              # Delete delete markers
+              echo "  Deleting delete markers..."
+              MARKERS=$(aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --region ${{ env.AWS_REGION }} 2>/dev/null || echo "{}")
+              MARKER_COUNT=$(echo "$MARKERS" | jq -r '.Objects | length // 0' 2>/dev/null || echo "0")
+              if [ "$MARKER_COUNT" -gt 0 ]; then
+                aws s3api delete-objects --bucket "$BUCKET" --delete "$MARKERS" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              fi
+              
+              # Disable versioning
+              echo "  Disabling versioning..."
+              aws s3api put-bucket-versioning \
+                --bucket "$BUCKET" \
+                --versioning-configuration Status=Suspended \
+                --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              
+              # Delete bucket
+              echo "  Deleting bucket..."
+              aws s3api delete-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} && echo "  ✅ Deleted: $BUCKET" || echo "  ⚠️  Could not delete: $BUCKET"
+            else
+              echo "✅ Bucket does not exist: $BUCKET"
+            fi
+          done
+          
+          echo ""
+          echo "Waiting 20 seconds for AWS to propagate deletions..."
+          sleep 20
+          
+          # Verify deletion
+          echo "Verifying buckets are deleted..."
+          for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+            if aws s3api head-bucket --bucket "$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+              echo "  ⚠️  $BUCKET still exists (will retry in verification step)"
+            else
+              echo "  ✅ $BUCKET confirmed deleted"
+            fi
+          done
+
       - name: Check and clean up failed stack
         run: |
           STACK_NAME="location-detection-dev"
           ENV="dev"
-          
-          # Check for conflicting stack (location-detection-api) that exports the same CloudFormation exports
           CONFLICTING_STACK="location-detection-api"
           CONFLICTING_STATUS=$(aws cloudformation describe-stacks \
             --stack-name $CONFLICTING_STACK \
