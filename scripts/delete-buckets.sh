@@ -52,17 +52,54 @@ done
 
 echo ""
 echo "✅ Bucket cleanup complete"
-echo "Waiting 15 seconds for AWS to propagate..."
-sleep 15
+echo "Waiting for buckets to be fully deleted (with retry logic)..."
+MAX_RETRIES=15
+RETRY_INTERVAL=10
 
-# Verify deletion
+for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
+  RETRY_COUNT=0
+  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    # Check if bucket exists
+    if aws s3api head-bucket --bucket "$BUCKET" --region "$REGION" 2>/dev/null; then
+      RETRY_COUNT=$((RETRY_COUNT + 1))
+      echo "  ⏳ Bucket $BUCKET still exists (attempt $RETRY_COUNT/$MAX_RETRIES), waiting ${RETRY_INTERVAL}s..."
+      sleep $RETRY_INTERVAL
+    else
+      echo "  ✅ Bucket $BUCKET confirmed deleted"
+      break
+    fi
+  done
+  
+  if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+    echo "  ⚠️  Bucket $BUCKET still exists after $MAX_RETRIES attempts"
+    echo "  This may cause deployment to fail. Bucket may be in a 'deleting' state."
+  fi
+done
+
+# Final wait to ensure AWS has fully propagated deletions
 echo ""
-echo "Verifying deletion..."
+echo "Final wait (30 seconds) to ensure AWS has fully propagated deletions..."
+sleep 30
+
+# Final verification
+echo ""
+echo "Final verification..."
+ALL_DELETED=true
 for BUCKET in "$BLUEPRINTS_BUCKET" "$CACHE_BUCKET"; do
   if aws s3api head-bucket --bucket "$BUCKET" --region "$REGION" 2>/dev/null; then
-    echo "  ⚠️  $BUCKET still exists"
+    echo "  ⚠️  WARNING: $BUCKET still exists - deployment may fail"
+    ALL_DELETED=false
   else
     echo "  ✅ $BUCKET confirmed deleted"
   fi
 done
+
+if [ "$ALL_DELETED" = "false" ]; then
+  echo ""
+  echo "⚠️  Some buckets still exist. Deployment may fail with 409 conflict errors."
+  echo "This usually means buckets are in a 'deleting' state and need more time."
+else
+  echo ""
+  echo "✅ All buckets confirmed deleted - safe to proceed with deployment"
+fi
 
