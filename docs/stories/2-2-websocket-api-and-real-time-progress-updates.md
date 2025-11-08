@@ -1,6 +1,6 @@
 # Story 2.2: WebSocket API and Real-time Progress Updates
 
-Status: drafted
+Status: ready-for-dev
 
 ## Story
 
@@ -280,7 +280,7 @@ src/tests/
 
 ### Context Reference
 
-<!-- Path(s) to story context XML will be added here by context workflow -->
+- `docs/stories/2-2-websocket-api-and-real-time-progress-updates.context.xml`
 
 ### Agent Model Used
 

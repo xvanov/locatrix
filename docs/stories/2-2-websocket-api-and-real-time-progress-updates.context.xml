@@ -1,0 +1,380 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>2</storyId>
+    <title>WebSocket API and Real-time Progress Updates</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-08T00:43:11Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/2-2-websocket-api-and-real-time-progress-updates.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a developer</asA>
+    <iWant>I want a WebSocket API with real-time progress update capabilities</iWant>
+    <soThat>So that clients can receive real-time progress updates during processing</soThat>
+    <tasks>
+- [ ] Task 1: Create WebSocket API handler with API Gateway integration (AC: #1)
+  - [ ] Create `src/api/websocket_api.py` Lambda handler
+  - [ ] Implement `$connect` event handler to store connection ID
+  - [ ] Implement `$disconnect` event handler to clean up connections
+  - [ ] Implement `$default` message handler for client messages
+  - [ ] Extract connection ID from event context
+  - [ ] Handle connection lifecycle events
+  - [ ] Test: Verify WebSocket connection lifecycle works correctly
+
+- [ ] Task 2: Implement connection management and job ID association (AC: #1, #2, #4)
+  - [ ] Create DynamoDB table `websocket_connections` with partition key `connection_id` and sort key `job_id`
+  - [ ] Store connection ID and job ID mapping on connect
+  - [ ] Handle `subscribe` message from client to associate job_id with connection
+  - [ ] Clean up connection records on disconnect
+  - [ ] Implement TTL for connection records (1 hour)
+  - [ ] Test: Verify connection management and job ID association
+
+- [ ] Task 3: Create WebSocket service for sending messages (AC: #1, #3, #5, #6)
+  - [ ] Create `src/services/websocket_service.py` service class
+  - [ ] Implement `send_message()` method using API Gateway Management API
+  - [ ] Query DynamoDB to find connections for a job_id
+  - [ ] Send progress update messages to all connected clients
+  - [ ] Format messages according to architecture.md message format
+  - [ ] Include stage, progress percentage, and estimated time in messages
+  - [ ] Test: Verify message sending works correctly
+
+- [ ] Task 4: Implement progress update message formats (AC: #1, #5, #6)
+  - [ ] Implement `progress_update` message type with stage, progress, message, estimated_seconds_remaining
+  - [ ] Implement `stage_complete` message type with stage and results
+  - [ ] Implement `job_complete` message type with final results
+  - [ ] Implement `job_failed` message type with error details
+  - [ ] Implement `job_cancelled` message type
+  - [ ] Include timestamp in all messages
+  - [ ] Test: Verify message formats match architecture specification
+
+- [ ] Task 5: Implement message queuing and retry logic (AC: #1, #7)
+  - [ ] Implement retry logic for failed message sends using existing `retry.py` utilities
+  - [ ] Log failed message sends but don't stop processing
+  - [ ] Handle API Gateway Management API errors gracefully
+  - [ ] Implement exponential backoff for retries
+  - [ ] Cache connection IDs for performance
+  - [ ] Test: Verify retry logic handles failures correctly
+
+- [ ] Task 6: Integrate with pipeline stages for progress updates (AC: #1, #5)
+  - [ ] Add WebSocket service integration points in pipeline stage handlers
+  - [ ] Send progress updates at start of each stage
+  - [ ] Send progress updates during stage processing (if applicable)
+  - [ ] Send stage_complete message when stage finishes
+  - [ ] Send job_complete message when all stages complete
+  - [ ] Handle job failures and send job_failed message
+  - [ ] Test: Verify progress updates are sent at each pipeline stage
+
+- [ ] Task 7: Handle client messages (subscribe, cancel_job, request_status) (AC: #2)
+  - [ ] Parse incoming client messages (JSON format)
+  - [ ] Handle `subscribe` message to associate job_id with connection
+  - [ ] Handle `cancel_job` message to cancel job processing
+  - [ ] Handle `request_status` message to send current job status
+  - [ ] Validate message format and return error for invalid messages
+  - [ ] Test: Verify client message handling works correctly
+
+- [ ] Task 8: Update SAM template for WebSocket API (AC: #1)
+  - [ ] Add WebSocket API Gateway resource to template.yaml
+  - [ ] Configure WebSocket API routes ($connect, $disconnect, $default)
+  - [ ] Add Lambda function for WebSocket handler
+  - [ ] Configure IAM permissions for API Gateway Management API
+  - [ ] Configure IAM permissions for DynamoDB websocket_connections table
+  - [ ] Test: Verify SAM template deploys correctly
+
+- [ ] Task 9: Create WebSocket connection model (AC: #1)
+  - [ ] Create connection data model with connection_id, job_id, created_at, last_activity, status
+  - [ ] Implement to_dynamodb_item() and from_dynamodb_item() methods
+  - [ ] Add validation for connection data
+  - [ ] Test: Verify connection model works correctly
+
+- [ ] Task 10: Update tests for WebSocket functionality (AC: #1-7)
+  - [ ] Create unit tests for WebSocket API handler
+  - [ ] Create unit tests for WebSocket service
+  - [ ] Create integration tests for WebSocket connection lifecycle
+  - [ ] Create integration tests for message sending
+  - [ ] Create integration tests for client message handling
+  - [ ] Mock API Gateway Management API for testing
+  - [ ] Test: Verify all tests pass with new functionality
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+1. **Given** The REST API is working
+   **When** I create the WebSocket API handler and service
+   **Then** The following are implemented:
+   - `src/api/websocket_api.py` with API Gateway WebSocket integration
+   - Connection management (connect, disconnect, send message)
+   - Progress update message format from architecture.md
+   - Job ID association with WebSocket connections
+   - `src/services/websocket_service.py` for sending messages
+   - Integration with pipeline stages to send progress updates
+   - Message queuing for reliable delivery
+   - Error handling for failed message sends
+
+2. **And** Clients can connect and subscribe to job updates
+
+3. **And** Progress messages are sent in real-time during processing
+
+4. **And** Connections are cleaned up on disconnect
+
+5. **And** Progress updates are sent at each pipeline stage
+
+6. **And** Messages include stage, progress percentage, and estimated time
+
+7. **And** Failed message sends are logged but don't stop processing
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/stories/PRD.md</path>
+        <title>Product Requirements Document (PRD): Location Detection AI</title>
+        <section>FR-009 (Real-time progress updates - Growth feature)</section>
+        <snippet>FR-009: Provide real-time progress updates during processing (Growth feature). The PRD specifies that real-time progress updates are a growth feature that enhances user experience by providing immediate feedback during blueprint processing.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>WebSocket API, WebSocket Message Format, Communication Patterns</section>
+        <snippet>Architecture decision to use API Gateway WebSocket API for real-time progress updates. Defines standardized message formats: progress_update, stage_complete, job_complete, job_failed, job_cancelled. Specifies connection lifecycle management and bidirectional communication patterns.</snippet>
+      </doc>
+      <doc>
+        <path>docs/tech-spec-epic-2.md</path>
+        <title>Epic Technical Specification: API Gateway & Job Management</title>
+        <section>WebSocket API, Data Models and Contracts, Workflows and Sequencing</section>
+        <snippet>Technical specification for WebSocket API implementation including connection management, message formats, DynamoDB schema for websocket_connections table, and integration workflows. Specifies use of API Gateway Management API for sending messages and connection lifecycle management.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>locatrix - Epic Breakdown</title>
+        <section>Epic 2: API Gateway & Job Management - Story 2.2</section>
+        <snippet>Epic 2 Story 2.2 acceptance criteria and technical notes. Specifies use of API Gateway WebSocket API, DynamoDB for connection storage, API Gateway Management API for message sending, and retry logic for failed sends.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/api/rest_api.py</path>
+        <kind>API handler</kind>
+        <symbol>handler, handle_health_check, handle_create_job, handle_get_job, handle_cancel_job</symbol>
+        <lines>1-487</lines>
+        <reason>Reference implementation for API Gateway Lambda handler patterns, request ID generation, error handling, and response formatting. WebSocket handler should follow similar patterns for logging and error handling.</reason>
+      </artifact>
+      <artifact>
+        <path>src/services/job_service.py</path>
+        <kind>Service</kind>
+        <symbol>JobService, create_job, get_job, cancel_job</symbol>
+        <lines>1-379</lines>
+        <reason>Job service provides job management logic that WebSocket service will integrate with to get job status for progress updates. WebSocket service should reuse job service patterns for DynamoDB access and error handling.</reason>
+      </artifact>
+      <artifact>
+        <path>src/models/job.py</path>
+        <kind>Data model</kind>
+        <symbol>Job, JobStatus</symbol>
+        <lines>1-200</lines>
+        <reason>Job data model defines job structure and status values. WebSocket connection model should follow similar patterns for DynamoDB serialization and validation.</reason>
+      </artifact>
+      <artifact>
+        <path>src/utils/retry.py</path>
+        <kind>Utility</kind>
+        <symbol>retry_with_backoff, retry_aws_call, is_retryable_error, exponential_backoff_delay</symbol>
+        <lines>1-233</lines>
+        <reason>Retry utilities with exponential backoff (1s, 2s, 4s, 8s) for handling transient AWS service failures. WebSocket service should use these utilities for retrying failed API Gateway Management API calls.</reason>
+      </artifact>
+      <artifact>
+        <path>src/utils/logging.py</path>
+        <kind>Utility</kind>
+        <symbol>get_logger</symbol>
+        <lines>1-100</lines>
+        <reason>Structured JSON logging utility with request_id and correlation_id support. WebSocket handler and service should use this for consistent logging patterns.</reason>
+      </artifact>
+      <artifact>
+        <path>src/utils/errors.py</path>
+        <kind>Utility</kind>
+        <symbol>format_error_response, InvalidFileFormatError, JobNotFoundError</symbol>
+        <lines>1-150</lines>
+        <reason>Error handling utilities and custom exception classes. WebSocket handler should define WebSocket-specific error classes following similar patterns.</reason>
+      </artifact>
+      <artifact>
+        <path>src/utils/request_id.py</path>
+        <kind>Utility</kind>
+        <symbol>generate_request_id, extract_api_version</symbol>
+        <lines>1-50</lines>
+        <reason>Request ID generation utilities. WebSocket handler should generate request IDs for tracing WebSocket events.</reason>
+      </artifact>
+      <artifact>
+        <path>src/tests/unit/test_rest_api.py</path>
+        <kind>Test</kind>
+        <symbol>TestRestAPI</symbol>
+        <lines>1-300</lines>
+        <reason>Unit test patterns for API handlers. WebSocket API tests should follow similar patterns for mocking AWS services and testing handler logic.</reason>
+      </artifact>
+      <artifact>
+        <path>src/tests/integration/test_api_endpoints.py</path>
+        <kind>Test</kind>
+        <symbol>TestAPIEndpoints</symbol>
+        <lines>1-200</lines>
+        <reason>Integration test patterns for API endpoints. WebSocket integration tests should follow similar patterns for testing end-to-end workflows.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <python>
+        <package>boto3</package>
+        <version>>=1.28.0,<2.0.0</version>
+        <purpose>AWS SDK for Python - used for DynamoDB, S3, API Gateway Management API</purpose>
+      </python>
+      <python>
+        <package>botocore</package>
+        <version>>=1.31.0,<2.0.0</version>
+        <purpose>AWS SDK core library - used for AWS service clients and error handling</purpose>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>
+      <type>Architecture Pattern</type>
+      <description>Use API Gateway WebSocket API for real-time progress updates. Store connection IDs in DynamoDB mapped to job IDs. Use API Gateway Management API to send messages to connected clients.</description>
+      <source>docs/architecture.md#Decision-Summary</source>
+    </constraint>
+    <constraint>
+      <type>Message Format</type>
+      <description>All WebSocket messages must follow standardized format from architecture.md: type, job_id, stage, progress, message, estimated_seconds_remaining, timestamp. Message types: progress_update, stage_complete, job_complete, job_failed, job_cancelled.</description>
+      <source>docs/architecture.md#WebSocket-Message-Format</source>
+    </constraint>
+    <constraint>
+      <type>Connection Management</type>
+      <description>Store connection IDs in DynamoDB table `websocket_connections` with partition key `connection_id` and sort key `job_id`. Implement TTL of 1 hour for automatic cleanup.</description>
+      <source>docs/tech-spec-epic-2.md#Data-Models-and-Contracts</source>
+    </constraint>
+    <constraint>
+      <type>Error Handling</type>
+      <description>Failed message sends must be logged but not stop processing. Use existing retry utilities from src/utils/retry.py with exponential backoff (1s, 2s, 4s, 8s).</description>
+      <source>docs/architecture.md#Error-Handling</source>
+    </constraint>
+    <constraint>
+      <type>Logging</type>
+      <description>Use structured JSON logging with request_id, job_id, and correlation_id. Follow existing logging patterns from src/utils/logging.py.</description>
+      <source>docs/stories/2-2-websocket-api-and-real-time-progress-updates.md#Dev-Notes</source>
+    </constraint>
+    <constraint>
+      <type>Naming Convention</type>
+      <description>WebSocket connection ID format: conn_{timestamp}_{random}. Message type format: progress_update, stage_complete, job_complete, job_failed, job_cancelled. DynamoDB table: websocket_connections.</description>
+      <source>docs/stories/2-2-websocket-api-and-real-time-progress-updates.md#Dev-Notes</source>
+    </constraint>
+    <constraint>
+      <type>Project Structure</type>
+      <description>WebSocket API implementation should integrate seamlessly with existing AWS SAM project structure. Create src/api/websocket_api.py, src/services/websocket_service.py, src/models/websocket_connection.py following existing patterns.</description>
+      <source>docs/stories/2-2-websocket-api-and-real-time-progress-updates.md#Project-Structure-Notes</source>
+    </constraint>
+    <constraint>
+      <type>Integration</type>
+      <description>WebSocket service should integrate with enhanced job service from Story 2.1 to get job status for progress updates. Reuse existing utilities: logging.py, errors.py, retry.py, request_id.py.</description>
+      <source>docs/stories/2-2-websocket-api-and-real-time-progress-updates.md#Learnings-from-Previous-Story</source>
+    </constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>API Gateway WebSocket API</name>
+      <kind>WebSocket API</kind>
+      <signature>Connection URL: wss://{api-id}.execute-api.{region}.amazonaws.com/api/v1/ws. Routes: $connect, $disconnect, $default</signature>
+      <path>template.yaml (to be added)</path>
+      <description>API Gateway WebSocket API for real-time bidirectional communication. Handles connection lifecycle events ($connect, $disconnect) and client messages ($default route).</description>
+    </interface>
+    <interface>
+      <name>API Gateway Management API</name>
+      <kind>AWS Service API</kind>
+      <signature>apigatewaymanagementapi.post_to_connection(ConnectionId=connection_id, Data=message_json)</signature>
+      <path>src/services/websocket_service.py (to be created)</path>
+      <description>AWS API Gateway Management API for sending messages to connected WebSocket clients. Requires connection_id and message data.</description>
+    </interface>
+    <interface>
+      <name>DynamoDB websocket_connections Table</name>
+      <kind>Database Table</kind>
+      <signature>Partition Key: connection_id (String), Sort Key: job_id (String). Attributes: created_at, last_activity, status. TTL: 1 hour</signature>
+      <path>template.yaml (to be added)</path>
+      <description>DynamoDB table for storing WebSocket connection mappings. Associates connection IDs with job IDs for routing progress updates.</description>
+    </interface>
+    <interface>
+      <name>Job Service</name>
+      <kind>Service Interface</kind>
+      <signature>JobService.get_job(job_id: str) -> Job</signature>
+      <path>src/services/job_service.py</path>
+      <description>Job service for retrieving job status. WebSocket service uses this to get current job status for progress updates and client status requests.</description>
+    </interface>
+    <interface>
+      <name>Client Message Protocol</name>
+      <kind>Message Protocol</kind>
+      <signature>JSON messages: {"type": "subscribe|cancel_job|request_status", "job_id": "..."}</signature>
+      <path>src/api/websocket_api.py (to be created)</path>
+      <description>Client-to-server message protocol. Clients send subscribe, cancel_job, or request_status messages. Server validates and processes messages.</description>
+    </interface>
+    <interface>
+      <name>Server Message Protocol</name>
+      <kind>Message Protocol</kind>
+      <signature>JSON messages: {"type": "progress_update|stage_complete|job_complete|job_failed|job_cancelled", "job_id": "...", "stage": "...", "progress": 0-100, "message": "...", "estimated_seconds_remaining": ..., "timestamp": "..."}</signature>
+      <path>src/services/websocket_service.py (to be created)</path>
+      <description>Server-to-client message protocol. Standardized format for progress updates, stage completion, job completion, failures, and cancellations.</description>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Testing standards follow existing patterns from the codebase. Use pytest for unit and integration testing. Unit tests should mock AWS services using moto or manual mocks. Integration tests should test end-to-end workflows with mocked AWS services. Target 80% code coverage for WebSocket components. All acceptance criteria must have corresponding tests. Test structure: src/tests/unit/ for unit tests, src/tests/integration/ for integration tests. Follow existing test patterns from test_rest_api.py and test_api_endpoints.py.
+    </standards>
+    <locations>
+      <location>src/tests/unit/test_websocket_api.py</location>
+      <location>src/tests/unit/test_websocket_service.py</location>
+      <location>src/tests/unit/test_websocket_connection.py</location>
+      <location>src/tests/integration/test_websocket_endpoints.py</location>
+    </locations>
+    <ideas>
+      <idea>
+        <acceptanceCriteriaId>AC-1</acceptanceCriteriaId>
+        <description>Test WebSocket API handler for $connect, $disconnect, and $default events. Verify connection ID extraction, DynamoDB storage, and message routing.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-1</acceptanceCriteriaId>
+        <description>Test WebSocket service message sending logic. Mock API Gateway Management API and verify message format, retry logic, and error handling.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-1</acceptanceCriteriaId>
+        <description>Test connection model validation and serialization. Verify to_dynamodb_item() and from_dynamodb_item() methods work correctly.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-1, AC-5, AC-6</acceptanceCriteriaId>
+        <description>Test message format generation for progress_update, stage_complete, job_complete, job_failed, job_cancelled. Verify all required fields are present and format matches architecture specification.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-1, AC-7</acceptanceCriteriaId>
+        <description>Test retry logic for failed message sends. Verify exponential backoff, max retries, and that failures don't stop processing.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-2</acceptanceCriteriaId>
+        <description>Test client message handling: subscribe, cancel_job, request_status. Verify message parsing, validation, and error responses for invalid messages.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-2, AC-4</acceptanceCriteriaId>
+        <description>Test WebSocket connection lifecycle end-to-end: connect, subscribe, disconnect. Verify connection records are created, associated with job_id, and cleaned up on disconnect.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-3, AC-5</acceptanceCriteriaId>
+        <description>Test message sending to connected clients. Verify messages are sent to all connections associated with a job_id, and connection ID caching works correctly.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-4</acceptanceCriteriaId>
+        <description>Test connection cleanup on disconnect. Verify connection records are removed from DynamoDB and TTL is set correctly.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-5</acceptanceCriteriaId>
+        <description>Test integration with pipeline stages (mocked). Verify progress updates are sent at start of each stage, during processing, and on stage completion.</description>
+      </idea>
+      <idea>
+        <acceptanceCriteriaId>AC-1-7</acceptanceCriteriaId>
+        <description>Test edge cases: concurrent connections for same job, connection failure during processing, message delivery failure and retry, invalid message format, job cancellation during WebSocket connection.</description>
+      </idea>
+    </ideas>
+  </tests>
+</story-context>
+

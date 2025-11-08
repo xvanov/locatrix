@@ -46,7 +46,7 @@ development_status:
   # Epic 2: API Gateway & Job Management
   epic-2: contexted
   2-1-rest-api-enhancements-and-job-service-improvements: done
-  2-2-websocket-api-and-real-time-progress-updates: drafted
+  2-2-websocket-api-and-real-time-progress-updates: ready-for-dev
   2-3-job-feedback-and-additional-features: backlog
   epic-2-retrospective: optional
 
