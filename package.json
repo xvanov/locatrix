@@ -1,0 +1,16 @@
+{
+  "name": "locatrix",
+  "version": "1.0.0",
+  "description": "Location Detection AI - Backend API",
+  "scripts": {
+    "test:api": "playwright test",
+    "test:api:ui": "playwright test --ui",
+    "test:api:debug": "playwright test --debug",
+    "test:api:headed": "playwright test --headed",
+    "test:api:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^10.1.0",
+    "@playwright/test": "^1.56.1"
+  }
+}

@@ -222,6 +222,48 @@ class RateLimitExceededError(LocationDetectionError):
         )
 
 
+class InvalidFeedbackError(LocationDetectionError):
+    """Error raised when feedback data is invalid."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        """
+        Initialize invalid feedback error.
+
+        Args:
+            message: Error message
+            details: Additional error details (default: None)
+        """
+        super().__init__(
+            code='INVALID_FEEDBACK',
+            message=message,
+            details=details or {},
+            status_code=400
+        )
+
+
+class FeedbackNotFoundError(LocationDetectionError):
+    """Error raised when feedback is not found."""
+
+    def __init__(self, feedback_id: str):
+        """
+        Initialize feedback not found error.
+
+        Args:
+            feedback_id: Feedback ID that was not found
+        """
+        message = f"Feedback '{feedback_id}' not found"
+        details = {
+            'feedback_id': feedback_id
+        }
+
+        super().__init__(
+            code='FEEDBACK_NOT_FOUND',
+            message=message,
+            details=details,
+            status_code=404
+        )
+
+
 def format_error_response(
     error: Exception,
     request_id: Optional[str] = None,

@@ -46,14 +46,14 @@ development_status:
   # Epic 2: API Gateway & Job Management
   epic-2: contexted
   2-1-rest-api-enhancements-and-job-service-improvements: done
-  2-2-websocket-api-and-real-time-progress-updates: ready-for-dev
-  2-3-job-feedback-and-additional-features: backlog
+  2-2-websocket-api-and-real-time-progress-updates: done
+  2-3-job-feedback-and-additional-features: done
   epic-2-retrospective: optional
 
   # Epic 3: AI Processing Pipeline
   epic-3: backlog
-  3-1-textract-service-integration-with-preview-pipeline: backlog
-  3-2-sagemaker-integration-with-complete-processing-pipeline: backlog
+  3-1-textract-service-integration-with-preview-pipeline: done
+  3-2-sagemaker-integration-with-complete-processing-pipeline: done
   epic-3-retrospective: optional
 
   # Epic 4: Caching & Performance

@@ -1,0 +1,23 @@
+{
+  "Parameters": {
+    "Environment": "dev"
+  },
+  "ApiRestHandlerFunction": {
+    "JOBS_TABLE_NAME": "dev-jobs",
+    "PREVIEW_CACHE_TABLE_NAME": "dev-preview-cache",
+    "BLUEPRINTS_BUCKET_NAME": "location-detection-dev-blueprints",
+    "CACHE_BUCKET_NAME": "location-detection-dev-cache",
+    "TEXTRACT_RESULTS_BUCKET_NAME": "location-detection-dev-textract-results",
+    "AWS_ENDPOINT_URL": "http://host.docker.internal:4566"
+  },
+  "Stage1PreviewFunction": {
+    "JOBS_TABLE_NAME": "dev-jobs",
+    "PREVIEW_CACHE_TABLE_NAME": "dev-preview-cache",
+    "BLUEPRINTS_BUCKET_NAME": "location-detection-dev-blueprints",
+    "CACHE_BUCKET_NAME": "location-detection-dev-cache",
+    "TEXTRACT_RESULTS_BUCKET_NAME": "location-detection-dev-textract-results",
+    "AWS_ENDPOINT_URL": "http://host.docker.internal:4566"
+  }
+}
+
+

@@ -127,3 +127,5 @@ class TestJob:
         with pytest.raises(ValueError, match="must be one of"):
             invalid_job.validate()
 
+
+

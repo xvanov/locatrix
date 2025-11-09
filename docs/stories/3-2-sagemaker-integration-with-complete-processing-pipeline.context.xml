@@ -1,0 +1,172 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>2</storyId>
+    <title>SageMaker Integration with Complete Processing Pipeline</title>
+    <status>drafted</status>
+    <generatedAt>2025-01-15T10:30:00Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/3-2-sagemaker-integration-with-complete-processing-pipeline.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer</asA>
+    <iWant>integrate SageMaker and deploy a complete multi-stage processing pipeline with Step Functions orchestration</iWant>
+    <soThat>users can see progressively improved results with a testable, end-to-end workflow</soThat>
+    <tasks>
+      <task id="1" acs="1,2,3,4,5">Create SageMaker service with client integration</task>
+      <task id="2" acs="1,3">Implement model input preprocessing</task>
+      <task id="3" acs="1,4,7">Implement model output post-processing</task>
+      <task id="4" acs="1,6">Create intermediate pipeline stage Lambda handler</task>
+      <task id="5" acs="1,7,8">Create final pipeline stage Lambda handler</task>
+      <task id="6" acs="1,10,11">Create Step Functions state machine definition</task>
+      <task id="7" acs="1,12,13">Integrate WebSocket service for progress updates</task>
+      <task id="8" acs="1">Store intermediate and final results</task>
+      <task id="9" acs="1,6,7">Implement boundary refinement and validation</task>
+      <task id="10" acs="1,9">Configure Lambda functions in SAM template</task>
+      <task id="11" acs="9">Implement processing time optimization</task>
+      <task id="12" acs="14">Create integration tests for complete pipeline</task>
+      <task id="13" acs="1,10">Update job service to trigger Step Functions state machine</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">SageMaker service, intermediate/final pipelines, and Step Functions orchestration implemented</criterion>
+    <criterion id="2">Service can invoke SageMaker endpoints</criterion>
+    <criterion id="3">Model inputs are properly formatted</criterion>
+    <criterion id="4">Room detection results are parsed correctly</criterion>
+    <criterion id="5">Error handling for model failures is implemented</criterion>
+    <criterion id="6">Intermediate results improve upon preview accuracy</criterion>
+    <criterion id="7">Final results include precise room boundaries (Growth) or bounding boxes (MVP)</criterion>
+    <criterion id="8">Results match the output schema from PRD</criterion>
+    <criterion id="9">Total processing time is under 30 seconds</criterion>
+    <criterion id="10">State machine orchestrates preview → intermediate → final stages</criterion>
+    <criterion id="11">Failed stages can be retried automatically</criterion>
+    <criterion id="12">Progress updates are sent via WebSocket at each stage</criterion>
+    <criterion id="13">Final results are sent via WebSocket and REST API</criterion>
+    <criterion id="14">Complete pipeline can be tested end-to-end</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/stories/PRD.md" title="Product Requirements Document" section="Core Functional Requirements">
+        Defines FR-002 (Process files using AI/ML), FR-003 (Return room coordinates), FR-004 (Bounding box - MVP, Precise vertices - Growth), FR-006 (30-second processing time), FR-009 (Real-time progress updates). Specifies output schema and processing requirements.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Technology Stack Details">
+        Details SageMaker integration with YOLOv8-seg fine-tuned model, multi-stage pipeline design, Step Functions orchestration, progressive disclosure pattern, and performance considerations.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Epic to Architecture Mapping">
+        Maps Epic 3 to multi-stage processing pipeline components including Step Functions state machine, pipeline stage Lambdas, progress tracking, and WebSocket updates.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="S3-Bucket-Structure">
+        Defines S3 bucket structure for storing intermediate results at cache/intermediate/{job_id}/stage_2.json and final results at cache/final/{job_id}/results.json.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="DynamoDB-Schema">
+        Specifies DynamoDB schema for job status and result storage, including job record updates at each stage completion.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Error-Recovery">
+        Documents error handling and retry logic patterns with exponential backoff (1s, 2s, 4s, 8s) and graceful degradation.
+      </doc>
+      <doc path="docs/epics.md" title="Epic Breakdown" section="Epic 3: AI Processing Pipeline">
+        Story 3.2 acceptance criteria and technical notes covering SageMaker integration, multi-stage pipeline, Step Functions orchestration, and WebSocket integration.
+      </doc>
+      <doc path="docs/stories/3-1-textract-service-integration-with-preview-pipeline.md" title="Story 3.1: Textract Service Integration" section="Dev Notes">
+        Establishes service structure pattern, pipeline stage handler pattern, Textract results storage location (cache/textract/{job_id}/analysis.json), error handling patterns, and structured logging utilities.
+      </doc>
+    </docs>
+    <code>
+      <artifact path="src/services/textract_service.py" kind="service" symbol="TextractService" reason="Load Textract results from S3 for intermediate and final processing. Reference for service pattern implementation." />
+      <artifact path="src/pipeline/stage_1_preview.py" kind="pipeline" symbol="lambda_handler" reason="Reference for pipeline stage handler pattern. Shows how to load job, process with services, store results, and handle errors." />
+      <artifact path="src/services/job_service.py" kind="service" symbol="JobService" reason="Integrate with job service to update job status at each stage completion. Methods: get_job(), create_job()." />
+      <artifact path="src/services/websocket_service.py" kind="service" symbol="WebSocketService" reason="Use WebSocket service for progress updates. Methods: send_progress_update(), send_stage_complete(), send_job_complete()." />
+      <artifact path="src/utils/logging.py" kind="utility" symbol="get_logger" reason="Use existing structured JSON logging for pipeline operations with request_id, job_id, and timing metrics." />
+      <artifact path="src/utils/errors.py" kind="utility" symbol="LocationDetectionError" reason="Use existing error classes. Add SageMaker-specific error codes if needed (e.g., SAGEMAKER_INVOCATION_FAILED)." />
+      <artifact path="src/utils/retry.py" kind="utility" symbol="retry_aws_call" reason="Use existing retry logic with exponential backoff for SageMaker API calls. Handles transient failures automatically." />
+      <artifact path="src/services/preview_service.py" kind="service" symbol="PreviewService" reason="Reference for storing results in S3. Methods: store_textract_results(), store_preview_cache(). Pattern for storing intermediate/final results." />
+    </code>
+    <dependencies>
+      <ecosystem name="python">
+        <package name="boto3" version=">=1.28.0,<2.0.0" />
+        <package name="botocore" version=">=1.31.0,<2.0.0" />
+      </ecosystem>
+      <ecosystem name="aws">
+        <service name="SageMaker Runtime" purpose="Model inference for room detection" />
+        <service name="Step Functions" purpose="Multi-stage pipeline orchestration" />
+        <service name="Lambda" purpose="Pipeline stage handlers" />
+        <service name="S3" purpose="Result storage (intermediate and final)" />
+        <service name="DynamoDB" purpose="Job status updates" />
+        <service name="API Gateway WebSocket" purpose="Real-time progress updates" />
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Use boto3 SageMaker Runtime client for model inference with YOLOv8-seg fine-tuned model</constraint>
+    <constraint>Implement three-stage workflow (preview → intermediate → final) with Step Functions orchestration</constraint>
+    <constraint>Progressive disclosure: Return preview results quickly (2-5 seconds), then intermediate (10-15 seconds), then final (20-30 seconds)</constraint>
+    <constraint>Store intermediate results in S3 at cache/intermediate/{job_id}/stage_2.json</constraint>
+    <constraint>Store final results in S3 at cache/final/{job_id}/results.json and DynamoDB for fast retrieval</constraint>
+    <constraint>Send real-time progress updates at each stage via WebSocket API</constraint>
+    <constraint>Implement retry logic with exponential backoff (1s, 2s, 4s, 8s) for SageMaker API calls</constraint>
+    <constraint>Ensure total processing time stays under 30 seconds for 95% of requests</constraint>
+    <constraint>Follow existing service structure pattern from TextractService</constraint>
+    <constraint>Follow existing pipeline stage handler pattern from stage_1_preview.py</constraint>
+    <constraint>Use structured JSON logging with request_id, job_id, and timing metrics</constraint>
+    <constraint>Lambda functions: 1GB-2GB memory, 5 minute timeout (300 seconds) for each stage</constraint>
+    <constraint>Support MVP (bounding boxes) and Growth (precise vertices) implementations</constraint>
+  </constraints>
+  <interfaces>
+    <interface name="SageMakerService.invoke_endpoint" kind="method" signature="def invoke_endpoint(self, endpoint_name: str, input_data: Dict, model_version: str = '1.0.0') -> Dict" path="src/services/sagemaker_service.py">
+      Invoke SageMaker endpoint for room detection. Takes preprocessed blueprint data in model format, returns room detection results.
+    </interface>
+    <interface name="Step Functions State Machine" kind="state-machine" signature="Preview → Intermediate → Final" path="src/pipeline/step_functions.py">
+      Three-stage workflow orchestration with retry logic and error handling. Each stage is a Lambda function invocation.
+    </interface>
+    <interface name="Stage 2 Lambda Handler" kind="lambda-handler" signature="def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]" path="src/pipeline/stage_2_intermediate.py">
+      Receives job_id and stage context, loads Textract results from S3, calls SageMaker service, stores intermediate results, updates job status, sends progress update.
+    </interface>
+    <interface name="Stage 3 Lambda Handler" kind="lambda-handler" signature="def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]" path="src/pipeline/stage_3_final.py">
+      Receives job_id and stage context, loads intermediate results from S3, calls SageMaker service, extracts precise boundaries, stores final results, sends completion message.
+    </interface>
+    <interface name="WebSocket Progress Update" kind="websocket-message" signature="{'type': 'progress_update', 'job_id': str, 'stage': str, 'progress': int, 'message': str, 'estimated_seconds_remaining': int}" path="src/services/websocket_service.py">
+      Progress update message format sent at each pipeline stage via WebSocketService.send_progress_update().
+    </interface>
+    <interface name="S3 Textract Results" kind="data-format" signature="cache/textract/{job_id}/analysis.json" path="S3">
+      Textract analysis results stored by Story 3.1. Contains text_blocks, layout_blocks, and metadata. Loaded by intermediate and final stages.
+    </interface>
+    <interface name="S3 Intermediate Results" kind="data-format" signature="cache/intermediate/{job_id}/stage_2.json" path="S3">
+      Intermediate processing results stored by Stage 2. Contains refined room detections. Loaded by Stage 3.
+    </interface>
+    <interface name="S3 Final Results" kind="data-format" signature="cache/final/{job_id}/results.json" path="S3">
+      Final processing results stored by Stage 3. Contains precise room boundaries matching PRD output schema.
+    </interface>
+  </interfaces>
+  <tests>
+    <standards>
+      Use pytest for Python testing with AAA pattern (Arrange, Act, Assert). Target 80% code coverage for SageMaker service and pipeline components. Use moto for AWS service mocking. Test with mock SageMaker endpoints. All acceptance criteria must have corresponding tests. Use structured logging utilities for test output.
+    </standards>
+    <locations>
+      <location>src/tests/unit/test_sagemaker_service.py</location>
+      <location>src/tests/unit/test_intermediate_pipeline.py</location>
+      <location>src/tests/unit/test_final_pipeline.py</location>
+      <location>src/tests/integration/test_complete_pipeline.py</location>
+    </locations>
+    <ideas>
+      <test ac="1">Test SageMaker service endpoint invocation with mock responses</test>
+      <test ac="2">Test SageMaker endpoint invocation success and failure scenarios</test>
+      <test ac="3">Test model input preprocessing handles all supported formats correctly</test>
+      <test ac="4">Test output parsing handles model response correctly for both MVP and Growth</test>
+      <test ac="5">Test error handling for model failures, timeouts, and service unavailability</test>
+      <test ac="6">Test intermediate results improve accuracy compared to preview</test>
+      <test ac="7">Test final results include precise boundaries (Growth) or bounding boxes (MVP)</test>
+      <test ac="8">Test results match PRD output schema exactly</test>
+      <test ac="9">Test total processing time stays under 30 seconds</test>
+      <test ac="10">Test Step Functions state machine orchestrates stages correctly</test>
+      <test ac="11">Test failed stages can be retried automatically</test>
+      <test ac="12">Test progress updates are sent via WebSocket at each stage</test>
+      <test ac="13">Test final results are sent via WebSocket and REST API</test>
+      <test ac="14">Test complete pipeline end-to-end: preview → intermediate → final</test>
+    </ideas>
+  </tests>
+</story-context>
+

@@ -153,3 +153,5 @@ class TestCancelJob:
         with pytest.raises(JobAlreadyCompletedError):
             job_service.cancel_job('job_123')
 
+
+

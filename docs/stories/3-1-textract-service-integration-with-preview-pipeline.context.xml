@@ -1,0 +1,132 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>1</storyId>
+    <title>Textract Service Integration with Preview Pipeline</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-01-15T00:00:00Z</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/3-1-textract-service-integration-with-preview-pipeline.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>As a developer</asA>
+    <iWant>I want to integrate Textract and deploy a working preview pipeline that returns room detections</iWant>
+    <soThat>So that users can see initial results with a testable, end-to-end workflow</soThat>
+    <tasks>
+      <task id="1">Create Textract service with client integration (AC: #1, #2)</task>
+      <task id="2">Implement document preprocessing for Textract (AC: #1, #2)</task>
+      <task id="3">Create preview pipeline stage Lambda handler (AC: #1, #5, #6, #7)</task>
+      <task id="4">Implement fast room detection algorithm (AC: #1, #5)</task>
+      <task id="5">Store Textract results for subsequent stages (AC: #3)</task>
+      <task id="6">Implement preview cache storage in DynamoDB (AC: #1)</task>
+      <task id="7">Add processing time logging and monitoring (AC: #4)</task>
+      <task id="8">Configure Lambda function in SAM template (AC: #1, #6)</task>
+      <task id="9">Create integration tests for preview pipeline (AC: #6, #7)</task>
+      <task id="10">Update job service to trigger preview pipeline (AC: #1, #6)</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">Given The job service can store blueprints in S3 (from Story 1.2), When I create the Textract service and deploy the preview pipeline, Then The following are implemented: src/services/textract_service.py with Textract client integration, Document analysis using Textract AnalyzeDocument API, Text and layout extraction from blueprint images, src/pipeline/stage_1_preview.py Lambda handler, Fast room detection using lightweight model or heuristics, Preview results returned in under 5 seconds, Preview results stored in DynamoDB cache</criterion>
+    <criterion id="2">And Textract can process PNG, JPG, and PDF files</criterion>
+    <criterion id="3">And Extracted data is stored for use in subsequent stages</criterion>
+    <criterion id="4">And Processing time is logged for monitoring</criterion>
+    <criterion id="5">And Preview results include bounding boxes for detected rooms</criterion>
+    <criterion id="6">And Preview pipeline can be tested end-to-end</criterion>
+    <criterion id="7">And Preview can be returned even if full processing fails</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/stories/PRD.md" title="Product Requirements Document" section="FR-002, FR-003, FR-004, FR-006">
+        Core functional requirements for AI/ML processing, room coordinate detection, bounding box output, and 30-second processing time requirement. Defines the overall product vision and success criteria.
+      </doc>
+      <doc path="docs/architecture.md" title="Architecture Document" section="Technology Stack Details, Performance Considerations, DynamoDB Schema, S3 Bucket Structure, Error Recovery">
+        Defines Textract integration using boto3 Textract client with AnalyzeDocument API, preview pipeline performance target (2-5 seconds), DynamoDB preview_cache table with TTL of 1 hour, S3 cache structure for Textract results, and graceful degradation patterns for error handling.
+      </doc>
+      <doc path="docs/epics.md" title="Epic Breakdown" section="Epic 3: AI Processing Pipeline, Story 3.1">
+        Epic 3 goal: Implement multi-stage processing pipeline with Textract for preprocessing and SageMaker for room detection. Story 3.1 acceptance criteria, technical notes, and prerequisites (Story 1.2).
+      </doc>
+      <doc path="docs/stories/3-1-textract-service-integration-with-preview-pipeline.md" title="Story 3.1" section="Dev Notes, Architecture Patterns and Constraints, Testing Standards">
+        Detailed story implementation plan with architecture decisions, preview pipeline flow, Textract service interface, preview pipeline output format, project structure notes, learnings from previous stories, and testing standards.
+      </doc>
+    </docs>
+    <code>
+      <artifact path="src/services/job_service.py" kind="service" symbol="JobService" reason="Job service manages job lifecycle and stores blueprints in S3. Preview pipeline will integrate with job service to update job status and store preview results." />
+      <artifact path="src/utils/retry.py" kind="utility" symbol="retry_aws_call, retry_with_backoff" reason="Retry logic with exponential backoff (1s, 2s, 4s, 8s) for transient AWS service failures. Textract service should use this for handling transient Textract API failures." />
+      <artifact path="src/utils/logging.py" kind="utility" symbol="get_logger, StructuredLogger" reason="Structured JSON logging with request_id, job_id, and correlation_id. Preview pipeline should use this for processing time logging and monitoring." />
+      <artifact path="src/utils/errors.py" kind="utility" symbol="JobNotFoundError, ServiceUnavailableError" reason="Custom error classes for error handling. Preview pipeline should use appropriate error classes for Textract failures and processing errors." />
+      <artifact path="src/models/job.py" kind="model" symbol="Job, JobStatus" reason="Job data models for job status tracking. Preview pipeline will update job status and store preview results in job record." />
+      <artifact path="src/api/rest_api.py" kind="api" symbol="handler" reason="REST API handler for job endpoints. Preview pipeline may need to integrate with REST API for job status updates." />
+      <artifact path="src/tests/unit/test_job_service.py" kind="test" symbol="TestCreateJob, TestGetJob, TestCancelJob" reason="Unit test patterns for service testing. Textract service and preview pipeline tests should follow similar patterns with mocked AWS services." />
+    </code>
+    <dependencies>
+      <ecosystem name="Python">
+        <package name="boto3" version=">=1.28.0,<2.0.0" reason="AWS SDK for Python. Required for Textract client integration and AWS service interactions." />
+        <package name="botocore" version=">=1.31.0,<2.0.0" reason="Low-level AWS SDK library. Required for AWS service client configuration and error handling." />
+      </ecosystem>
+      <ecosystem name="Testing">
+        <package name="pytest" reason="Python testing framework. Required for unit and integration tests for Textract service and preview pipeline." />
+      </ecosystem>
+      <ecosystem name="AWS">
+        <service name="Textract" reason="AWS Textract service for document analysis. Required for AnalyzeDocument API to extract text and layout from blueprint images." />
+        <service name="DynamoDB" reason="AWS DynamoDB for preview cache storage. Required for storing preview results in preview_cache table with TTL." />
+        <service name="S3" reason="AWS S3 for blueprint storage and Textract result caching. Required for storing blueprints and Textract analysis results for subsequent pipeline stages." />
+        <service name="Lambda" reason="AWS Lambda for serverless compute. Required for preview pipeline Lambda handler (stage_1_preview.py)." />
+        <service name="SAM" reason="AWS SAM for infrastructure as code. Required for defining Lambda function configuration in template.yaml." />
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Textract Integration: Use boto3 Textract client with AnalyzeDocument API for document preprocessing. Source: docs/architecture.md#Technology-Stack-Details</constraint>
+    <constraint>Preview Pipeline: Implement fast preview stage (2-5 seconds) using lightweight detection or heuristics. Source: docs/architecture.md#Performance-Considerations</constraint>
+    <constraint>Caching Strategy: Store preview results in DynamoDB preview_cache table with TTL of 1 hour. Source: docs/architecture.md#DynamoDB-Schema</constraint>
+    <constraint>S3 Storage: Store Textract results in S3 for use in subsequent pipeline stages. S3 key format: cache/textract/{job_id}/analysis.json. Source: docs/architecture.md#S3-Bucket-Structure</constraint>
+    <constraint>Error Handling: Return preview results even if full processing fails, following graceful degradation pattern. Source: docs/architecture.md#Error-Recovery</constraint>
+    <constraint>Logging: Use structured JSON logging with request_id, job_id, and timing metrics. Source: docs/architecture.md#Logging-Strategy</constraint>
+    <constraint>Service Structure: Follow service pattern established in Story 2.3 (feedback_service.py). Textract service should follow same structure. Source: docs/stories/3-1-textract-service-integration-with-preview-pipeline.md#Learnings-from-Previous-Story</constraint>
+    <constraint>Retry Logic: Use existing retry utility (src/utils/retry.py) for Textract API calls with exponential backoff. Source: docs/stories/3-1-textract-service-integration-with-preview-pipeline.md#Dev-Notes</constraint>
+    <constraint>Naming Conventions: Lambda function: pipeline_stage_1_preview, Service class: TextractService, S3 key format: cache/textract/{job_id}/analysis.json, DynamoDB cache key: preview:{blueprint_hash}:{model_version}. Source: docs/architecture.md#Naming-Patterns</constraint>
+    <constraint>Testing: Target 80% code coverage for Textract service and preview pipeline components. All acceptance criteria must have corresponding tests. Source: docs/stories/3-1-textract-service-integration-with-preview-pipeline.md#Testing-Standards</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="TextractService.analyze_document" kind="method" signature="def analyze_document(self, s3_bucket: str, s3_key: str) -> Dict" path="src/services/textract_service.py">
+      Analyze blueprint document using Textract AnalyzeDocument API. Returns Dict containing text blocks, layout blocks, and metadata.
+    </interface>
+    <interface name="JobService.create_job" kind="method" signature="def create_job(self, blueprint_file: BinaryIO, blueprint_format: str, filename: Optional[str] = None, request_id: Optional[str] = None, correlation_id: Optional[str] = None, api_version: Optional[str] = None) -> Job" path="src/services/job_service.py">
+      Job service method for creating jobs and storing blueprints in S3. Preview pipeline will integrate with job service to update job status.
+    </interface>
+    <interface name="Preview Pipeline Output" kind="data" signature="JSON format with job_id, stage, rooms array, processing_time_seconds, timestamp" path="src/pipeline/stage_1_preview.py">
+      Preview pipeline output format: {&quot;job_id&quot;: &quot;job_20240115_abc123&quot;, &quot;stage&quot;: &quot;preview&quot;, &quot;rooms&quot;: [{&quot;id&quot;: &quot;room_001&quot;, &quot;bounding_box&quot;: [50, 50, 200, 300], &quot;name_hint&quot;: &quot;Entry Hall&quot;, &quot;confidence&quot;: 0.75}], &quot;processing_time_seconds&quot;: 3.2, &quot;timestamp&quot;: &quot;2024-01-15T10:30:00Z&quot;}. Source: docs/stories/3-1-textract-service-integration-with-preview-pipeline.md#Preview-Pipeline-Output-Format
+    </interface>
+    <interface name="AWS Textract AnalyzeDocument API" kind="REST endpoint" signature="boto3.client('textract').analyze_document(Document={'S3Object': {'Bucket': bucket, 'Key': key}}, FeatureTypes=['TABLES', 'FORMS']) -> Dict" path="AWS Textract Service">
+      AWS Textract AnalyzeDocument API for document analysis. Returns response with Blocks array containing text blocks, layout blocks, and metadata.
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing standards follow existing patterns from the codebase. Use pytest for unit and integration testing. Unit tests should mock AWS services using moto or manual mocks (following patterns from test_job_service.py). Integration tests should test end-to-end workflows with mocked AWS services. Target 80% code coverage for Textract service and preview pipeline components. All acceptance criteria must have corresponding tests. Test structure: src/tests/unit/ for unit tests (test_textract_service.py, test_preview_pipeline.py), src/tests/integration/ for integration tests (test_preview_pipeline.py). Follow existing test patterns from test_job_service.py with pytest fixtures, mocked AWS services, and Given-When-Then structure.
+    </standards>
+    <locations>
+      <location>src/tests/unit/test_textract_service.py</location>
+      <location>src/tests/unit/test_preview_pipeline.py</location>
+      <location>src/tests/integration/test_preview_pipeline.py</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test Textract service document analysis logic - verify AnalyzeDocument API integration, test with mock Textract responses, verify text and layout extraction</idea>
+      <idea ac="1">Test preview pipeline stage handler logic - verify Lambda handler receives job_id and blueprint S3 key, verify blueprint loading from S3, verify Textract service integration, verify room detection algorithm, verify preview results formatting</idea>
+      <idea ac="2">Test file format handling - verify PNG, JPG, and PDF file processing, test file format validation, test preprocessing for different formats</idea>
+      <idea ac="3">Test Textract result storage - verify results stored in S3 at cache/textract/{job_id}/analysis.json, verify stored results can be retrieved for subsequent stages</idea>
+      <idea ac="4">Test processing time logging - verify Textract analysis time logged, verify room detection time logged, verify total preview pipeline execution time logged, verify timing metrics in structured logs</idea>
+      <idea ac="5">Test room detection algorithm - verify room detection produces valid bounding boxes, test with various blueprint layouts, verify bounding box format [x_min, y_min, x_max, y_max]</idea>
+      <idea ac="6">Test preview pipeline end-to-end - test with mock Textract responses, test S3 integration for blueprint loading and result storage, test DynamoDB integration for cache storage, test error scenarios (Textract failures, S3 errors, DynamoDB errors), test processing time requirements (under 5 seconds)</idea>
+      <idea ac="7">Test error handling and partial result return - verify preview can return even if full processing fails, test graceful degradation, verify partial results returned when available</idea>
+      <idea ac="1">Test preview cache storage - verify preview results cached in DynamoDB preview_cache table, verify cache key format preview:{blueprint_hash}:{model_version}, verify TTL configuration (1 hour), test cache lookup before processing</idea>
+    </ideas>
+  </tests>
+</story-context>
+

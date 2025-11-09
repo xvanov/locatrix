@@ -208,3 +208,5 @@ aws dynamodb delete-item \
 aws s3 rm s3://location-detection-dev-blueprints/blueprints/JOB_ID/ --recursive
 ```
 
+
+

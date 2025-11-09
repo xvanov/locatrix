@@ -2,7 +2,7 @@ version = 0.1
 
 [default]
 [default.global.parameters]
-stack_name = "location-detection-api"
+stack_name = "location-detection-dev"
 region = "us-east-1"
 
 [default.build.parameters]
@@ -13,10 +13,10 @@ parallel = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-region = "us-east-1"
 parameter_overrides = "Environment=\"dev\""
-s3_prefix = "location-detection-api"
+s3_prefix = "location-detection-dev"
 image_repositories = []
+stack_name = "location-detection-dev"
 
 [default.package.parameters]
 resolve_s3 = true

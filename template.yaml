@@ -19,6 +19,29 @@ Parameters:
       - dev
       - prod
     Description: Environment name
+  
+  SageMakerIntermediateEndpointName:
+    Type: String
+    Default: ''
+    Description: SageMaker endpoint name for intermediate processing
+  
+  SageMakerFinalEndpointName:
+    Type: String
+    Default: ''
+    Description: SageMaker endpoint name for final processing
+  
+  OutputFormat:
+    Type: String
+    Default: mvp
+    AllowedValues:
+      - mvp
+      - growth
+    Description: Output format (mvp for bounding boxes, growth for precise vertices)
+  
+  ConfidenceThreshold:
+    Type: Number
+    Default: 0.7
+    Description: Confidence threshold for room detection (0.0 to 1.0)
 
 Resources:
   # DynamoDB Tables
@@ -61,6 +84,67 @@ Resources:
           Value: !Ref Environment
         - Key: Purpose
           Value: PreviewCache
+
+  WebSocketConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${Environment}-websocket-connections'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connection_id
+          KeyType: HASH
+        - AttributeName: job_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: JobIdIndex
+          KeySchema:
+            - AttributeName: job_id
+              KeyType: HASH
+            - AttributeName: connection_id
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: expires_at
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: WebSocketConnections
+
+  FeedbackTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${Environment}-feedback'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: feedback_id
+          AttributeType: S
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: feedback_id
+          KeyType: HASH
+        - AttributeName: job_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: job_id-index
+          KeySchema:
+            - AttributeName: job_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: FeedbackStorage
 
   # S3 Buckets
   BlueprintsBucket:
@@ -134,6 +218,15 @@ Resources:
           - Authorization
         MaxAge: 300
 
+  # WebSocket API Gateway
+  LocationDetectionWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${Environment}-websocket-api'
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+      Description: Location Detection AI WebSocket API for real-time progress updates
+
   # Lambda Function for REST API
   ApiRestHandlerFunction:
     Type: AWS::Serverless::Function
@@ -166,12 +259,44 @@ Resources:
             ApiId: !Ref LocationDetectionApi
             Path: /api/v1/jobs/{job_id}
             Method: DELETE
+        SubmitFeedback:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LocationDetectionApi
+            Path: /api/v1/jobs/{job_id}/feedback
+            Method: POST
+        GetFeedback:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LocationDetectionApi
+            Path: /api/v1/jobs/{job_id}/feedback
+            Method: GET
+        TriggerPreview:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LocationDetectionApi
+            Path: /api/v1/jobs/{job_id}/preview
+            Method: POST
+        GetPreview:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LocationDetectionApi
+            Path: /api/v1/jobs/{job_id}/preview
+            Method: GET
+        GetTextractResults:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LocationDetectionApi
+            Path: /api/v1/jobs/{job_id}/textract-results
+            Method: GET
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
             TableName: !Ref JobsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PreviewCacheTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FeedbackTable
         - S3CrudPolicy:
             BucketName: !Ref BlueprintsBucket
         - S3CrudPolicy:
@@ -188,12 +313,356 @@ Resources:
               - secretsmanager:GetSecretValue
               - secretsmanager:DescribeSecret
             Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:location-detection-*'
+          - Effect: Allow
+            Action:
+              - textract:AnalyzeDocument
+              - textract:DetectDocumentText
+            Resource: '*'
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTable
+          PREVIEW_CACHE_TABLE_NAME: !Ref PreviewCacheTable
+          FEEDBACK_TABLE_NAME: !Ref FeedbackTable
+          BLUEPRINTS_BUCKET_NAME: !Ref BlueprintsBucket
+          CACHE_BUCKET_NAME: !Ref CacheBucket
+          STEP_FUNCTIONS_STATE_MACHINE_ARN: !GetAtt RoomDetectionPipelineStateMachine.Arn
+
+  # Lambda Function for Preview Pipeline
+  Stage1PreviewFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-stage-1-preview'
+      CodeUri: src/
+      Handler: pipeline.stage_1_preview.lambda_handler
+      Timeout: 30
+      MemorySize: 512
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PreviewCacheTable
+        - S3CrudPolicy:
+            BucketName: !Ref BlueprintsBucket
+        - S3CrudPolicy:
+            BucketName: !Ref CacheBucket
+        - Statement:
+          - Effect: Allow
+            Action:
+              - textract:AnalyzeDocument
+              - textract:DetectDocumentText
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - states:StartExecution
+              - states:DescribeExecution
+              - states:StopExecution
+            Resource: !GetAtt RoomDetectionPipelineStateMachine.Arn
       Environment:
         Variables:
           JOBS_TABLE_NAME: !Ref JobsTable
           PREVIEW_CACHE_TABLE_NAME: !Ref PreviewCacheTable
           BLUEPRINTS_BUCKET_NAME: !Ref BlueprintsBucket
           CACHE_BUCKET_NAME: !Ref CacheBucket
+
+  # Lambda Function for Intermediate Pipeline
+  Stage2IntermediateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-stage-2-intermediate'
+      CodeUri: src/
+      Handler: pipeline.stage_2_intermediate.lambda_handler
+      Timeout: 300
+      MemorySize: 1024
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Ref CacheBucket
+        - Statement:
+          - Effect: Allow
+            Action:
+              - sagemaker:InvokeEndpoint
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LocationDetectionWebSocketApi}/*'
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTable
+          CACHE_BUCKET_NAME: !Ref CacheBucket
+          SAGEMAKER_INTERMEDIATE_ENDPOINT_NAME: !Ref SageMakerIntermediateEndpointName
+          WEBSOCKET_CONNECTIONS_TABLE_NAME: !Ref WebSocketConnectionsTable
+
+  # Lambda Function for Final Pipeline
+  Stage3FinalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-stage-3-final'
+      CodeUri: src/
+      Handler: pipeline.stage_3_final.lambda_handler
+      Timeout: 300
+      MemorySize: 1024
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Ref CacheBucket
+        - Statement:
+          - Effect: Allow
+            Action:
+              - sagemaker:InvokeEndpoint
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LocationDetectionWebSocketApi}/*'
+      Environment:
+        Variables:
+          JOBS_TABLE_NAME: !Ref JobsTable
+          CACHE_BUCKET_NAME: !Ref CacheBucket
+          SAGEMAKER_FINAL_ENDPOINT_NAME: !Ref SageMakerFinalEndpointName
+          WEBSOCKET_CONNECTIONS_TABLE_NAME: !Ref WebSocketConnectionsTable
+          OUTPUT_FORMAT: !Ref OutputFormat
+          CONFIDENCE_THRESHOLD: !Ref ConfidenceThreshold
+
+  # Step Functions State Machine for Pipeline Orchestration
+  RoomDetectionPipelineStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${Environment}-room-detection-pipeline'
+      RoleArn: !GetAtt StepFunctionsExecutionRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "Multi-stage room detection pipeline",
+          "StartAt": "Stage1Preview",
+          "States": {
+            "Stage1Preview": {
+              "Type": "Task",
+              "Resource": "${Stage1PreviewFunction.Arn}",
+              "Next": "Stage2Intermediate",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed",
+                    "States.Timeout",
+                    "ServiceUnavailable",
+                    "Throttling",
+                    "ThrottlingException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "PipelineFailed",
+                  "ResultPath": "$.error"
+                }
+              ],
+              "TimeoutSeconds": 300,
+              "ResultPath": "$.stage1_result"
+            },
+            "Stage2Intermediate": {
+              "Type": "Task",
+              "Resource": "${Stage2IntermediateFunction.Arn}",
+              "Next": "Stage3Final",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed",
+                    "States.Timeout",
+                    "ServiceUnavailable",
+                    "Throttling",
+                    "ThrottlingException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "PipelineFailed",
+                  "ResultPath": "$.error"
+                }
+              ],
+              "TimeoutSeconds": 300,
+              "ResultPath": "$.stage2_result"
+            },
+            "Stage3Final": {
+              "Type": "Task",
+              "Resource": "${Stage3FinalFunction.Arn}",
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed",
+                    "States.Timeout",
+                    "ServiceUnavailable",
+                    "Throttling",
+                    "ThrottlingException"
+                  ],
+                  "IntervalSeconds": 4,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "PipelineFailed",
+                  "ResultPath": "$.error"
+                }
+              ],
+              "TimeoutSeconds": 300,
+              "ResultPath": "$.stage3_result"
+            },
+            "PipelineFailed": {
+              "Type": "Fail",
+              "Error": "PipelineExecutionFailed",
+              "Cause": "One or more pipeline stages failed"
+            }
+          }
+        }
+
+  # IAM Role for Step Functions Execution
+  StepFunctionsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StepFunctionsExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt Stage1PreviewFunction.Arn
+                  - !GetAtt Stage2IntermediateFunction.Arn
+                  - !GetAtt Stage3FinalFunction.Arn
+              - Effect: Allow
+                Action:
+                  - states:DescribeExecution
+                  - states:StopExecution
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - events:PutTargets
+                  - events:PutRule
+                  - events:DescribeRule
+                Resource: '*'
+
+  # Lambda Function for WebSocket API
+  ApiWebSocketHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-api-websocket-handler'
+      CodeUri: src/
+      Handler: api.websocket_api.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketConnectionsTable
+        - Statement:
+          - Effect: Allow
+            Action:
+              - execute-api:ManageConnections
+            Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LocationDetectionWebSocketApi}/*'
+      Environment:
+        Variables:
+          WEBSOCKET_CONNECTIONS_TABLE_NAME: !Ref WebSocketConnectionsTable
+
+  # WebSocket API Stage
+  WebSocketApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref LocationDetectionWebSocketApi
+      StageName: api
+      AutoDeploy: true
+
+  # WebSocket API Routes
+  WebSocketConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref LocationDetectionWebSocketApi
+      RouteKey: $connect
+      Target: !Sub 'integrations/${WebSocketConnectIntegration}'
+
+  WebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref LocationDetectionWebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub 'integrations/${WebSocketDisconnectIntegration}'
+
+  WebSocketDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref LocationDetectionWebSocketApi
+      RouteKey: $default
+      Target: !Sub 'integrations/${WebSocketDefaultIntegration}'
+
+  # WebSocket API Integrations
+  WebSocketConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref LocationDetectionWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiWebSocketHandlerFunction.Arn}/invocations'
+
+  WebSocketDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref LocationDetectionWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiWebSocketHandlerFunction.Arn}/invocations'
+
+  WebSocketDefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref LocationDetectionWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiWebSocketHandlerFunction.Arn}/invocations'
+
+  # Lambda Permissions for WebSocket API
+  WebSocketConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiWebSocketHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LocationDetectionWebSocketApi}/*/*'
+
+  WebSocketDisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiWebSocketHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LocationDetectionWebSocketApi}/*/*'
+
+  WebSocketDefaultPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApiWebSocketHandlerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LocationDetectionWebSocketApi}/*/*'
 
 Outputs:
   ApiUrl:
@@ -207,24 +676,52 @@ Outputs:
   JobsTableName:
     Description: DynamoDB table name for jobs
     Value: !Ref JobsTable
-    Export:
-      Name: !Sub '${Environment}-jobs-table-name'
+    # Export removed to avoid conflict with existing stack exports
+    # Export:
+    #   Name: !Sub '${Environment}-jobs-table-name'
+  
+  StepFunctionsStateMachineArn:
+    Description: Step Functions state machine ARN for pipeline orchestration
+    Value: !GetAtt RoomDetectionPipelineStateMachine.Arn
+  
+  StepFunctionsStateMachineName:
+    Description: Step Functions state machine name
+    Value: !Ref RoomDetectionPipelineStateMachine
   
   PreviewCacheTableName:
     Description: DynamoDB table name for preview cache
     Value: !Ref PreviewCacheTable
+    # Export removed to avoid conflict with existing stack exports
+    # Export:
+    #   Name: !Sub '${Environment}-preview-cache-table-name'
+  
+  FeedbackTableName:
+    Description: DynamoDB table name for feedback
+    Value: !Ref FeedbackTable
     Export:
-      Name: !Sub '${Environment}-preview-cache-table-name'
+      Name: !Sub '${Environment}-feedback-table-name'
   
   BlueprintsBucketName:
     Description: S3 bucket name for blueprint files
     Value: !Ref BlueprintsBucket
-    Export:
-      Name: !Sub '${Environment}-blueprints-bucket-name'
+    # Export removed to avoid conflict with existing stack exports
+    # Export:
+    #   Name: !Sub '${Environment}-blueprints-bucket-name'
   
   CacheBucketName:
     Description: S3 bucket name for processing cache
     Value: !Ref CacheBucket
+    # Export removed to avoid conflict with existing stack exports
+    # Export:
+    #   Name: !Sub '${Environment}-cache-bucket-name'
+  
+  WebSocketApiUrl:
+    Description: WebSocket API endpoint URL
+    Value: !Sub 'wss://${LocationDetectionWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/api'
+  
+  WebSocketConnectionsTableName:
+    Description: DynamoDB table name for WebSocket connections
+    Value: !Ref WebSocketConnectionsTable
     Export:
-      Name: !Sub '${Environment}-cache-bucket-name'
+      Name: !Sub '${Environment}-websocket-connections-table-name'
 
